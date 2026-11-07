@@ -75,7 +75,7 @@ cp -Rn "${CLAUDE_SKILL_DIR}/templates/harness" ./
 ### 4. 中身を埋める
 
 - `harness/check.sh`: いちばん大事なファイル。同じコードなら同じ判定になるように書く。エージェントが変更できるファイルだけで合否が決まると、テストを書き換えて通すような抜け道ができる。判定に使うテストや期待値は、deny で守るか check.sh の中に置く。
-- `harness/harness.json`: 手順 2 で決めた値を入れる。テンプレートの `mode` と `final_counts` は null になっていて、決めずに残すと `harness.py` が動かない。
+- `harness/harness.json`: 手順 2 で決めた値を入れる。テンプレートの `mode` は null になっていて、決めずに残すと `harness.py` が動かない。`score` の課題では `final_counts` も同じで、`pass_fail` の課題では null のままでよい。
 - `harness/CONDITIONS.md`: コードを読めば分かることは書かない。目的、完了の定義、締め切り、環境、禁止事項、コードからは分からない前提を書く。認証情報の値は書かず、置き場所だけを書く。
 - `harness/checklist.md`: 「この課題に固有の項目」を、その分野で見落としやすい点で埋める。
 - `harness/settings.json`: 課題に合わせて deny を足す。テストを通す課題なら、テストのディレクトリを `Edit(./tests/**)` のように守る。deny は Claude Code の組み込みツールと、cat・sed・tee などの認識できる Bash コマンドにしか効かない。スクリプトの中から書き込むことは防げないので、check.sh 側でも改ざんを検出できるようにする。
