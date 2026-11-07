@@ -5,6 +5,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -590,6 +591,59 @@ class TemplateFiles(unittest.TestCase):
     def test_scripts_are_executable(self):
         for f in ("run.sh", "check.sh", "harness.py"):
             self.assertTrue(os.access(TEMPLATES / "harness" / f, os.X_OK), f)
+
+
+EVALS = TEMPLATES.parents[2] / "evals"
+
+
+def grader(path: Path) -> dict:
+    """The flat `key: value` lines of a grader's frontmatter (enough for the graders in this suite)."""
+    front = path.read_text(encoding="utf-8").split("---")[1]
+    out = {}
+    for line in front.splitlines():
+        k, sep, v = line.strip().partition(": ")
+        if sep:
+            v = v.strip()
+            out[k] = v[1:-1] if len(v) > 1 and v[0] == v[-1] == "'" else v  # YAML single quotes, no '' escapes here
+    return out
+
+
+class EvalGraders(unittest.TestCase):
+    """Graders must fail on the output they exist to catch, not pass on it by accident."""
+
+    def test_check_sh_graders_do_not_pass_on_the_unfilled_template(self):
+        # The template's comment mentions `SCORE=<数値>`: copying check.sh without implementing it must not pass.
+        template = (TEMPLATES / "harness" / "check.sh").read_text(encoding="utf-8")
+        implemented = template + './bench.sh | sed -n "s/^score: */SCORE=/p"\npython3 -m unittest -q\n'
+        commented = template + "# TODO: ./bench.sh か python3 -m unittest を呼び、SCORE= を出す\n"
+        graders = [g for g in EVALS.glob("*/graders/*.md") if grader(g).get("path") == "harness/check.sh"]
+        self.assertGreaterEqual(len(graders), 3)
+        for g in graders:
+            pattern = grader(g)["pattern"]
+            if g.stem == "custom-check-kept":
+                continue  # checks a marker the fixture wrote, not what the skill filled in
+            with self.subTest(grader=str(g.relative_to(EVALS))):
+                self.assertIsNone(re.search(pattern, template))
+                self.assertIsNone(re.search(pattern, commented))
+                self.assertIsNotNone(re.search(pattern, implemented))
+
+    def test_dot_claude_write_grader_sees_denied_writes(self):
+        # A write into .claude/ is denied in an eval run, so the file is never created and a grader over
+        # `files` passes no matter what. The attempted Write call is in the transcript, so count that instead.
+        g = grader(EVALS / "explicit-score-isucon" / "graders" / "no-dot-claude-write.md")
+        self.assertEqual((g["type"], g["tool"], g["min"], g["max"]), ("tool_used", "Write", "0", "0"))
+        call = lambda p: json.dumps({"file_path": p, "content": "x"})
+        self.assertIsNotNone(re.search(g["input_match"], call("/tmp/w/.claude/agents/auditor.md")))
+        self.assertIsNotNone(re.search(g["input_match"], call(".claude/settings.json")))
+        self.assertIsNone(re.search(g["input_match"], call("/tmp/w/harness/agents.json")))
+
+    def test_deadline_case_stays_in_the_future(self):
+        # A deadline that has already passed changes what a correct harness looks like, so the case would drift.
+        case = EVALS / "implicit-latency-min-best"
+        d = re.search(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d", (case / "prompt.md").read_text()).group()
+        self.assertGreater(engine.parse_time(d), engine.now() + engine.dt.timedelta(days=365))
+        pattern = grader(case / "graders" / "deadline-set.md")["pattern"]
+        self.assertIsNotNone(re.search(pattern, json.dumps({"deadline": d}, indent=2)))
 
 
 if __name__ == "__main__":

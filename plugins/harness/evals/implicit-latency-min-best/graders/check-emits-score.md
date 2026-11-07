@@ -3,5 +3,5 @@ type: regex
 target:
   source: file
   path: harness/check.sh
-pattern: 'SCORE='
+pattern: '(?:^|\n)(?![ \t]*#)[^\n]*SCORE='
 ---
