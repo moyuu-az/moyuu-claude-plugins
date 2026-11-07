@@ -35,3 +35,11 @@ python3 -m unittest discover -s plugins/harness/tests
 ```bash
 claude plugin validate .
 ```
+
+skill の振る舞いは `claude plugin eval` で測る。ケースは `plugins/harness/evals/` にあり、plugin ありとなしで 3 回ずつ実行して比べる。モデルを呼ぶので費用がかかる（全ケースで $25 前後）。
+
+```bash
+cd plugins/harness && claude plugin eval . --scaffold --trust-plugin --allow-tools Write Edit -j 2 --max-cost-usd 40
+```
+
+ケースは Bash を許可していない。`~/.aws/config` に `credential_process` があると、Bash を許可した eval は動かないためである。`cp` と `harness.py check` の実行は、単体テストで確かめる。

@@ -1,6 +1,6 @@
 {
   "name": "harness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Claude Code を人の介入なしで最後まで走らせるハーネスを対象プロジェクトに作る skill",
   "author": { "name": "moyuu" },
   "repository": "https://github.com/moyuu-az/moyuu-claude-plugins",
