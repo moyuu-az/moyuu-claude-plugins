@@ -36,7 +36,7 @@ python3 -m unittest discover -s plugins/harness/tests
 claude plugin validate .
 ```
 
-skill の振る舞いは `claude plugin eval` で測る。ケースは `plugins/harness/evals/` にあり、plugin ありとなしで 3 回ずつ実行して比べる。モデルを呼ぶので費用がかかる（全ケースで $25 前後）。
+skill の振る舞いは `claude plugin eval` で測る。ケースは `plugins/harness/evals/` にあり、plugin ありとなしで 3 回ずつ実行して比べる。モデルを呼ぶので費用がかかる（全ケースで $25〜30）。
 
 ```bash
 cd plugins/harness && claude plugin eval . --scaffold --trust-plugin --allow-tools Write Edit -j 2 --max-cost-usd 40
