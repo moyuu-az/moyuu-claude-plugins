@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -95,6 +96,16 @@ class ContinuationValue(unittest.TestCase):
     def test_constant_samples(self):
         self.assertAlmostEqual(engine.continuation_value([5, 5, 5], 7), 5)
 
+    def test_huge_runs_left_is_fast_and_exact(self):
+        # A sub-second check with hours left gives k in the millions; the hook must not time out
+        # (a timed-out Stop hook lets the agent stop).
+        s = [float(x) for x in range(50)]
+        t = time.monotonic()
+        big = engine.continuation_value(s, 10 ** 7)
+        self.assertLess(time.monotonic() - t, 2)
+        self.assertLessEqual(big, max(s))
+        self.assertEqual(big, engine.continuation_value(s, 10 ** 4))  # converged long before 10**4
+
 
 class StopRule(Base):
     def test_deadline_passed_stops(self):
@@ -179,6 +190,40 @@ class StopRule(Base):
         os.environ["HARNESS_NOW"] = at(50)  # 10 min left, 5 margin -> 0 runs
         self.assertTrue(engine.stop_rule(p.harness())["should_stop"])
 
+    def test_failed_latest_run_blocks_stop_when_last_counts(self):
+        # Same history as test_good_latest_with_few_runs_left_stops, then the newest run breaks.
+        # With final_counts=last the broken run is the final result, so stopping here is wrong.
+        p = self.project(mode="score", time_limit_minutes=60, run_seconds=600)
+        p.write_scores([{"ts": at(0), "score": s} for s in (100, 200, 300, 400)]
+                       + [{"ts": at(1), "score": None, "passed": False}])
+        p.start_at()
+        r = engine.stop_rule(p.harness())
+        self.assertFalse(r["should_stop"], r)
+
+    def test_failed_latest_run_blocks_target_stop_when_last_counts(self):
+        p = self.project(mode="score", target_score=100)
+        p.write_scores([{"ts": at(0), "score": 100}, {"ts": at(1), "score": 150, "passed": False}])
+        self.assertFalse(engine.stop_rule(p.harness())["should_stop"])
+
+    def test_passed_without_score_latest_blocks_stop_when_last_counts(self):
+        p = self.project(mode="score", target_score=100)
+        p.write_scores([{"ts": at(0), "score": 100}, {"ts": at(1), "score": None}])
+        self.assertFalse(engine.stop_rule(p.harness())["should_stop"])
+
+    def test_failed_latest_run_does_not_matter_when_best_counts(self):
+        p = self.project(mode="score", target_score=100, final_counts="best")
+        p.write_scores([{"ts": at(0), "score": 100}, {"ts": at(1), "score": None, "passed": False}])
+        self.assertTrue(engine.stop_rule(p.harness())["should_stop"])
+
+    def test_threshold_is_reported_in_original_units_for_min(self):
+        p = self.project(mode="score", direction="min", time_limit_minutes=600, run_seconds=600)
+        p.write_scores([{"ts": at(0), "score": s} for s in (40, 30, 10, 20)])
+        p.start_at()
+        r = engine.stop_rule(p.harness())
+        self.assertFalse(r["should_stop"], r)  # 20 is not good enough with ~54 runs left
+        self.assertGreaterEqual(r["threshold"], 10)
+        self.assertLess(r["threshold"], 20)
+
     def test_pass_fail(self):
         p = self.project(mode="pass_fail")
         p.write_scores([{"ts": at(0), "passed": False}])
@@ -239,6 +284,82 @@ class Check(Base):
         (p.root / "state" / "scores.jsonl").write_text('{"n": 1, "ts": "%s", "passed": true}\n{"n": 2, "ts' % T0)
         self.assertEqual(len(p.harness().scores()), 1)
 
+    def test_line_truncated_inside_a_multibyte_char_is_skipped_and_next_row_survives(self):
+        p = self.project(check_command="echo SCORE=7")
+        good = json.dumps({"n": 1, "ts": T0, "passed": True, "label": "インデックス"}, ensure_ascii=False)
+        cut = '{"n": 2, "ts": "%s", "label": "イ' % T0
+        (p.root / "state" / "scores.jsonl").write_bytes((good + "\n").encode() + cut.encode()[:-1])
+        self.assertEqual(len(p.harness().scores()), 1)
+        r = p.run("check")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = p.harness().scores()
+        self.assertEqual([row.get("score") for row in rows], [None, 7.0])  # the new row is not glued to the cut one
+        self.assertIn("current", p.run("report").stdout)
+
+    def test_timeout_with_partial_multibyte_output_is_recorded(self):
+        p = self.project(check_command="printf 'abc\\343\\201'; echo err-side >&2; sleep 5",
+                         check_timeout_seconds=0.5)
+        r = p.run("check")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        row = json.loads((p.root / "state" / "scores.jsonl").read_text())
+        self.assertEqual(row["exit_code"], 124)
+        log = (p.root / row["log"]).read_text()
+        self.assertIn("abc", log)
+        self.assertIn("err-side", log)
+
+    def test_non_utf8_output_is_recorded(self):
+        p = self.project(check_command="printf 'x\\377\\n'; echo SCORE=3")
+        r = p.run("check")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        row = json.loads((p.root / "state" / "scores.jsonl").read_text())
+        self.assertEqual(row["score"], 3.0)
+
+    def test_non_finite_score_is_ignored(self):
+        p = self.project(check_command="echo SCORE=5; echo SCORE=inf; echo SCORE=nan")
+        p.run("check")
+        row = json.loads((p.root / "state" / "scores.jsonl").read_text())
+        self.assertEqual(row["score"], 5.0)
+
+    def test_existing_log_of_a_concurrent_check_is_not_overwritten(self):
+        # Another check finished writing 0001.log but has not appended its row yet.
+        p = self.project(check_command="echo mine")
+        (p.root / "state" / "checks").mkdir()
+        (p.root / "state" / "checks" / "0001.log").write_text("theirs")
+        p.run("check")
+        row = json.loads((p.root / "state" / "scores.jsonl").read_text())
+        self.assertEqual((p.root / "state" / "checks" / "0001.log").read_text(), "theirs")
+        self.assertIn("mine", (p.root / row["log"]).read_text())
+        self.assertEqual(row["n"], 2)
+
+    def _git_project(self, check_command):
+        p = self.project(check_command=check_command)
+        git = lambda *a: subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a],
+                                        cwd=p.dir, check=True, capture_output=True, text=True)
+        (p.dir / "app.txt").write_text("base\n")
+        git("init", "-q")
+        git("add", ".")
+        git("commit", "-qm", "init")
+        return p, git
+
+    def test_label_is_the_code_that_was_checked_not_the_code_after(self):
+        # A long check runs in the background while the agent commits the next change.
+        p, git = self._git_project("git -c user.email=t@t -c user.name=t commit -q --allow-empty -m next")
+        before = git("rev-parse", "--short", "HEAD").stdout.strip()
+        p.run("check")
+        row = json.loads((p.root / "state" / "scores.jsonl").read_text())
+        self.assertEqual(row["label"], before)
+
+    def test_dirty_label_tells_different_uncommitted_changes_apart(self):
+        p, _ = self._git_project("true")
+        labels = []
+        for content in ("A\n", "B\n", "A\n"):
+            (p.dir / "app.txt").write_text(content)
+            p.run("check")
+            labels.append(p.harness().scores()[-1]["label"])
+        self.assertIn("dirty", labels[0])
+        self.assertNotEqual(labels[0], labels[1])
+        self.assertEqual(labels[0], labels[2])
+
 
 class StopHook(Base):
     def test_blocks_while_running_and_reports_status(self):
@@ -279,6 +400,15 @@ class StopHook(Base):
         self.assertEqual(proc.returncode, 1)
         self.assertIsNone(out)
         self.assertIn("cannot read", proc.stderr)
+        self.assertIn("cannot read", (p.root / "state" / "hook-errors.log").read_text())
+
+    def test_pass_fail_check_that_times_out_with_odd_bytes_still_blocks(self):
+        p = self.project(mode="pass_fail", check_command="printf 'abc\\343\\201'; sleep 5",
+                         check_timeout_seconds=0.5)
+        proc, out = p.hook("stop")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("timed out", out["reason"])
 
 
 class PostToolHook(Base):

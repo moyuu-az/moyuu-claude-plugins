@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import math
 import os
@@ -43,6 +44,19 @@ def parse_time(value: str) -> dt.datetime:
     return t
 
 
+def read_jsonl(p: Path) -> list[dict]:
+    if not p.exists():
+        return []
+    rows = []
+    # errors="replace": a crash can cut the last line inside a multibyte char; that must not hide every row.
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue  # a half-written last line after a crash
+    return rows
+
+
 class Harness:
     def __init__(self, root: Path = HERE):
         self.root = root
@@ -64,20 +78,16 @@ class Harness:
     # ---- small persistence helpers (append-only JSONL so a crash never loses history)
 
     def _jsonl(self, name: str) -> list[dict]:
-        p = self.state / name
-        if not p.exists():
-            return []
-        rows = []
-        for line in p.read_text(encoding="utf-8").splitlines():
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue  # a half-written last line after a crash
-        return rows
+        return read_jsonl(self.state / name)
 
     def _append(self, name: str, row: dict) -> None:
-        with (self.state / name).open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        line = (json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8")
+        with (self.state / name).open("a+b") as f:
+            if f.seek(0, os.SEEK_END):
+                f.seek(-1, os.SEEK_END)
+                if f.read(1) != b"\n":  # a crash left a cut line; without this the new row is glued to it and lost
+                    line = b"\n" + line
+            f.write(line)
 
     def scores(self) -> list[dict]:
         return self._jsonl("scores.jsonl")
@@ -162,7 +172,10 @@ def continuation_value(samples: list[float], runs_left: int) -> float:
         return -math.inf
     c = statistics.fmean(samples)
     for _ in range(runs_left - 1):
-        c = statistics.fmean(max(x, c) for x in samples)
+        nxt = statistics.fmean(max(x, c) for x in samples)
+        if nxt == c:  # fixed point: further k give the same value, and k can be in the millions
+            break
+        c = nxt
     return c
 
 
@@ -184,12 +197,18 @@ def stop_rule(h: Harness) -> dict:
     if not rows:
         out["reason"] = "no passing scored run yet"
         return out
+    counts_last = cfg.get("final_counts", "last") == "last"
+    newest = h.scores()[-1]
+    if counts_last and not (newest.get("passed") and newest.get("score") is not None):
+        # The newest run is what counts, and it has no passing score: an older good run must not end the task.
+        out["reason"] = "latest check failed or printed no score; with final_counts=last it would be the final result"
+        return out
     target = cfg.get("target_score")
     latest = rows[-1]
     if target is not None and h._key(latest["score"]) >= h._key(target):
         return {"should_stop": True, "reason": f"latest score {latest['score']} reached target {target}"}
 
-    if cfg.get("final_counts", "last") == "best":
+    if not counts_last:
         # The best run counts, so another run can never hurt: keep going until the clock runs out.
         out["reason"] = "final_counts=best: keep improving until the deadline"
         return out
@@ -230,9 +249,11 @@ def git_label(project: Path) -> str:
         if sha.returncode != 0:
             return "no-git"
         # harness/ is excluded: notes in decisions.md must not split one configuration in two.
-        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no", "--", ".", ":!harness"],
-                               cwd=project, capture_output=True, text=True, timeout=10)
-        return sha.stdout.strip() + ("-dirty" if dirty.stdout.strip() else "")
+        # The diff hash keeps different uncommitted experiments on one commit from pooling as one configuration.
+        diff = subprocess.run(["git", "diff", "HEAD", "--binary", "--no-color", "--no-ext-diff", "--no-textconv",
+                               "--", ".", ":!harness"], cwd=project, capture_output=True, timeout=10)
+        dirty = "-dirty-" + hashlib.sha1(diff.stdout).hexdigest()[:8] if diff.stdout.strip() else ""
+        return sha.stdout.strip() + dirty
     except (OSError, subprocess.TimeoutExpired):
         return "no-git"
 
@@ -243,9 +264,11 @@ def parse_score(output: str) -> float | None:
         line = line.strip()
         if line.startswith("SCORE="):
             try:
-                score = float(line[len("SCORE="):])
+                value = float(line[len("SCORE="):])
             except ValueError:
-                pass  # a malformed line is ignored; the last valid one wins
+                continue  # a malformed line is ignored; the last valid one wins
+            if math.isfinite(value):  # inf would beat every stop threshold; nan compares false with all
+                score = value
     return score
 
 
@@ -254,21 +277,31 @@ def run_check(h: Harness, label: str | None = None) -> dict:
     if not cmd:
         raise SystemExit('harness: harness.json has no "check_command"')
     timeout = float(h.cfg.get("check_timeout_seconds", 1800))
+    label = label or git_label(h.project)  # before the run: the agent may commit while a long check runs
     start = now()
     t0 = dt.datetime.now().timestamp()
+    timed_out = False
     try:
-        p = subprocess.run(cmd, shell=True, cwd=h.project, capture_output=True, text=True, timeout=timeout)
-        output, code = (p.stdout or "") + (p.stderr or ""), p.returncode
+        p = subprocess.run(cmd, shell=True, cwd=h.project, capture_output=True, timeout=timeout)
+        out, err, code = p.stdout, p.stderr, p.returncode
     except subprocess.TimeoutExpired as e:
-        out = e.stdout or ""
-        output = (out.decode() if isinstance(out, bytes) else out) + f"\n[harness] check timed out after {timeout:.0f}s"
-        code = 124
+        out, err, code, timed_out = e.stdout, e.stderr, 124, True
+    # Decode ourselves: one invalid or cut UTF-8 byte must not crash the check and lose the result.
+    output = ((out or b"") + (err or b"")).decode("utf-8", errors="replace")
+    if timed_out:
+        output += f"\n[harness] check timed out after {timeout:.0f}s"
     duration = dt.datetime.now().timestamp() - t0
     n = len(h.scores()) + 1
-    log = h.state / "checks" / f"{n:04d}.log"
-    log.parent.mkdir(exist_ok=True)
-    log.write_text(output, encoding="utf-8")
-    row = {"ts": start.isoformat(), "n": n, "label": label or git_label(h.project),
+    (h.state / "checks").mkdir(exist_ok=True)
+    while True:  # exclusive create: a concurrent check may already own this number
+        log = h.state / "checks" / f"{n:04d}.log"
+        try:
+            with log.open("x", encoding="utf-8") as f:
+                f.write(output)
+            break
+        except FileExistsError:
+            n += 1
+    row = {"ts": start.isoformat(), "n": n, "label": label,
            "passed": code == 0, "exit_code": code, "score": parse_score(output),
            "duration_s": round(duration, 2), "log": str(log.relative_to(h.root))}
     h._append("scores.jsonl", row)
@@ -409,16 +442,17 @@ def run_hook(event: str) -> int:
         payload = {}
     try:
         return HOOKS[event](Harness(), payload)
-    except SystemExit as e:  # config errors must be visible, not silently ignored
-        print(str(e), file=sys.stderr)
-        return 1
-    except Exception as e:  # never let a harness bug wedge the agent; record it for the post-mortem
+    except (SystemExit, Exception) as e:
+        # Never let a bad config or a harness bug wedge the agent, and leave a trace for the post-mortem:
+        # a headless run may never show hook stderr.
+        msg = str(e) if isinstance(e, SystemExit) else f"harness hook {event} failed: {e!r}"
         try:
+            (HERE / "state").mkdir(exist_ok=True)
             with (HERE / "state" / "hook-errors.log").open("a", encoding="utf-8") as f:
-                f.write(f"{now().isoformat()} {event}: {e!r}\n")
+                f.write(f"{now().isoformat()} {event}: {msg}\n")
         except OSError:
             pass
-        print(f"harness hook {event} failed: {e!r}", file=sys.stderr)
+        print(msg, file=sys.stderr)
         return 1
 
 
@@ -441,14 +475,7 @@ def report(h: Harness) -> None:
     runs = sorted(arch.iterdir()) if arch.exists() else []
     print("run\tchecks\tpassed\tbest\tlast")
     for d in runs + [h.state]:
-        f = d / "scores.jsonl"
-        rows = []
-        if f.exists():
-            for line in f.read_text(encoding="utf-8").splitlines():
-                try:
-                    rows.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+        rows = read_jsonl(d / "scores.jsonl")
         scored = [r["score"] for r in rows if r.get("passed") and r.get("score") is not None]
         pick = max if h.cfg.get("direction", "max") == "max" else min
         best = pick(scored) if scored else "-"
