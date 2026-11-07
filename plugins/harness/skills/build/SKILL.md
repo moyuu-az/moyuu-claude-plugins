@@ -21,8 +21,8 @@ argument-hint: "[build|improve] [対象ディレクトリ]"
 | `harness/SYSTEM.md` | 無人で進めるときの作業規則。システムプロンプトに追加する |
 | `harness/checklist.md` | 監査役が判断を突き合わせるチェック項目 |
 | `harness/decisions.md` | エージェントが判断を書き残す記録 |
+| `harness/agents.json` | 読み取り専用の監査役。`run.sh` が `--agents` で渡す |
 | `harness/run.sh` | 起動スクリプト |
-| `.claude/agents/auditor.md` | 読み取り専用の監査役 |
 
 hook の働きは次のとおり。
 
@@ -56,7 +56,7 @@ hook の働きは次のとおり。
 | 課題の種類 | `mode` | テストやビルドを通す課題は `pass_fail`、数値を上げ下げする課題は `score` |
 | 評価の方法 | `check_command` | 既存のテスト、ベンチマーク、負荷試験。なければ check.sh に書く |
 | 数値の向き | `direction` | 大きいほど良いなら `max`、レイテンシなどは `min` |
-| 何が最終結果か | `final_counts` | 最後の 1 回が採点される課題は `last`（ISUCON など）、最良の結果を残せる課題は `best` |
+| 何が最終結果か | `final_counts` | `score` の課題だけで使う。最後の 1 回が採点される課題は `last`（ISUCON など）、最良の結果を残せる課題は `best` |
 | 締め切り | `deadline` か `time_limit_minutes` | 絶対時刻なら deadline、起動からの時間なら time_limit_minutes |
 | 目標 | `target_score` | 達したら止めてよい値。なければ null |
 | 予算 | `HARNESS_MAX_BUDGET_USD` | run.sh の環境変数 |
@@ -66,17 +66,16 @@ hook の働きは次のとおり。
 
 ### 3. テンプレートを置く
 
-対象ディレクトリで実行する。既存のファイルは上書きしない（`cp -n`）。上書きされなかったファイルがあれば、中身を確かめてから手で合わせる。macOS の `cp -n` は、コピーしなかったファイルがあると何も表示せずに終了コード 1 を返す。どのファイルが既にあったかは、コピーの前に `ls -A harness .claude/agents` で確かめておく。
+対象ディレクトリで実行する。既存のファイルは上書きしない（`cp -n`）。上書きされなかったファイルがあれば、中身を確かめてから手で合わせる。macOS の `cp -n` は、コピーしなかったファイルがあると何も表示せずに終了コード 1 を返す。どのファイルが既にあったかは、コピーの前に `ls -A harness` で確かめておく。ファイルはすべて `harness/` の中に置く。`.claude/` は保護されたディレクトリで、権限の設定によっては書き込めないためである。
 
 ```bash
 cp -Rn "${CLAUDE_SKILL_DIR}/templates/harness" ./
-mkdir -p .claude/agents && cp -n "${CLAUDE_SKILL_DIR}/templates/claude/agents/auditor.md" .claude/agents/
 ```
 
 ### 4. 中身を埋める
 
 - `harness/check.sh`: いちばん大事なファイル。同じコードなら同じ判定になるように書く。エージェントが変更できるファイルだけで合否が決まると、テストを書き換えて通すような抜け道ができる。判定に使うテストや期待値は、deny で守るか check.sh の中に置く。
-- `harness/harness.json`: 手順 2 で決めた値を入れる。
+- `harness/harness.json`: 手順 2 で決めた値を入れる。テンプレートの `mode` は null になっていて、決めずに残すと `harness.py` が動かない。`score` の課題では `final_counts` も同じで、`pass_fail` の課題では null のままでよい。
 - `harness/CONDITIONS.md`: コードを読めば分かることは書かない。目的、完了の定義、締め切り、環境、禁止事項、コードからは分からない前提を書く。認証情報の値は書かず、置き場所だけを書く。
 - `harness/checklist.md`: 「この課題に固有の項目」を、その分野で見落としやすい点で埋める。
 - `harness/settings.json`: 課題に合わせて deny を足す。テストを通す課題なら、テストのディレクトリを `Edit(./tests/**)` のように守る。deny は Claude Code の組み込みツールと、cat・sed・tee などの認識できる Bash コマンドにしか効かない。スクリプトの中から書き込むことは防げないので、check.sh 側でも改ざんを検出できるようにする。
@@ -86,7 +85,7 @@ mkdir -p .claude/agents && cp -n "${CLAUDE_SKILL_DIR}/templates/claude/agents/au
 
 ハーネスを渡す前に、次を実際に実行して結果を確かめる。
 
-1. `python3 harness/harness.py check` が想定どおりの合否と SCORE を返す。`score` の課題では同じ状態で 3 回測り、ばらつきの大きさを CONDITIONS.md の「コードからは分からない前提」に書く。
+1. `python3 harness/harness.py check` が想定どおりの合否と SCORE を返す。`score` の課題では同じ状態で 3 回測り、ばらつきの大きさを CONDITIONS.md の「コードからは分からない前提」に書く。シェルが使えないなどの理由で測れないときは、TODO を残さず、「最初の 3 回の check でばらつきを測り、decisions.md に書く」と書く。どのファイルにも `TODO` を残したまま渡さない。
 2. `echo '{}' | python3 harness/harness.py hook stop` が、まだ終了条件を満たしていないときに `"decision": "block"` を返す。
 3. `python3 harness/harness.py status` と `python3 harness/harness.py stop-rule` が設定どおりの値を示す。ここまでの記録は、run.sh が起動時に `harness/state/archive/` へ移す。
 4. 短い試運転をするかをユーザーに聞く。費用がかかるので、するなら `HARNESS_MAX_BUDGET_USD=1 harness/run.sh` のように上限を下げ、`harness/state/runs/` のログで hook が働いたかを確かめる。`claude -p` は検証に通らない設定ファイルを黙って無視するので、ログに `SessionStart` の `hook_response` があることを必ず見る。ログの `system/init` の `permissionMode` が、選んだモード（既定は `auto`）になっているかも見る。auto モードを使えない環境では Manual で始まり、確認が必要な操作がすべて拒否される。

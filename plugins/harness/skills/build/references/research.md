@@ -16,7 +16,7 @@
 | --- | --- |
 | 実行ごとに変わる条件（競技時間、レギュレーション、ポータルの URL）を CONDITIONS.md に書き、初期プロンプトは「CONDITIONS.md を読み、今回の条件を確認してから、ISUCON を解いてください。」の 1 行だけ。追加の指示はシステムプロンプトに足した | `harness/CONDITIONS.md`、`harness/PROMPT.md`、`harness/SYSTEM.md` を `--append-system-prompt` で渡す |
 | 起動後、人からの入力は 0 回、エージェントが人を呼んだ回数も 0 回 | 質問は build の手順 2 だけで済ませる。SYSTEM.md で、迷ったら decisions.md に根拠を書いて進むよう指示する |
-| 監査役は「エージェントがこれまでの判断を書き残した記録を、準備しておいたチェック項目の一覧と突き合わせて見直す、サブエージェント」 | `.claude/agents/auditor.md`、`harness/checklist.md`、`harness/decisions.md` |
+| 監査役は「エージェントがこれまでの判断を書き残した記録を、準備しておいたチェック項目の一覧と突き合わせて見直す、サブエージェント」 | `harness/agents.json`（`--agents` で渡す監査役）、`harness/checklist.md`、`harness/decisions.md` |
 | スコアが 30 分以上伸びないときと終盤に、Claude Code の hook が監査役の起動を促した | PostToolUse hook の `stall_minutes` と `final_check_minutes` |
 | 「この構成で測ったスコアの一覧と残り時間から『あと何回走らせられるか』を計算し、その回数だけ走らせ直せるときの期待値を閾値にしました」。残り回数が減ると閾値も下がる | `harness.py` の `continuation_value` と Stop hook。最後の 1 回が採点される前提で、最適停止の漸化式 C_1 = E[X]、C_k = E[max(X, C_{k-1})] を使う |
 | 同じ構成でもスコアが 474,987〜629,638 点とばらつき、後半の変更の効果より大きかった | check の記録に commit の label を付け、同じ label の結果だけで閾値を計算する。`min_samples` 回測るまで止めない。checklist.md に「差がばらつきより大きいか」を入れる |

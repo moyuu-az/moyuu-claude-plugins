@@ -1,9 +1,9 @@
 {
-  "mode": "score",
+  "mode": null,
   "check_command": "./harness/check.sh",
   "check_timeout_seconds": 1800,
   "direction": "max",
-  "final_counts": "last",
+  "final_counts": null,
   "target_score": null,
   "deadline": null,
   "time_limit_minutes": null,

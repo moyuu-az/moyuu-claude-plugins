@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: implicit-pass-fail-tests
+context:
+  scaffold_script: fixture.sh

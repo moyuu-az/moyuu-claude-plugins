@@ -69,8 +69,9 @@ class Harness:
             raise SystemExit(f"harness: cannot read {cfg_path}: {e}")
         if self.cfg.get("mode") not in ("pass_fail", "score"):
             raise SystemExit('harness: harness.json "mode" must be "pass_fail" or "score"')
-        if self.cfg.get("final_counts", "last") not in ("last", "best"):
-            raise SystemExit('harness: harness.json "final_counts" must be "last" or "best"')
+        # final_counts only matters when scores are compared; a pass_fail harness may leave it null.
+        if self.cfg["mode"] == "score" and self.cfg.get("final_counts") not in ("last", "best"):
+            raise SystemExit('harness: harness.json "final_counts" must be "last" or "best" when mode is "score"')
         if self.cfg.get("direction", "max") not in ("max", "min"):
             raise SystemExit('harness: harness.json "direction" must be "max" or "min"')
         self.state.mkdir(exist_ok=True)
@@ -487,6 +488,13 @@ def validate_setup(h: Harness) -> None:
     missing = [ev for ev in ("SessionStart", "PostToolUse", "Stop", "PreCompact") if not hooks.get(ev)]
     if missing:
         raise SystemExit(f"harness: {path} has no hook for {', '.join(missing)}")
+    agents_path = h.root / "agents.json"
+    try:
+        agents = json.loads(agents_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise SystemExit(f"harness: cannot read {agents_path}: {e}")
+    if not (isinstance(agents, dict) and isinstance(agents.get("auditor"), dict)):
+        raise SystemExit(f"harness: {agents_path} must define an \"auditor\" agent")
 
 
 def start(h: Harness) -> None:

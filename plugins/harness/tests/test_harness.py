@@ -5,6 +5,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -35,7 +36,8 @@ class Project:
         shutil.copytree(TEMPLATES / "harness", self.dir / "harness")
         self.root = self.dir / "harness"
         base = json.loads((self.root / "harness.json").read_text())
-        base.update(cfg)
+        # The template leaves the task-specific choices unset on purpose; tests pick the common ones.
+        base.update({"mode": "score", "final_counts": "last"}, **cfg)
         (self.root / "harness.json").write_text(json.dumps(base))
 
     def write_scores(self, rows):
@@ -230,6 +232,24 @@ class StopRule(Base):
         self.assertFalse(engine.stop_rule(p.harness())["should_stop"])
         p.write_scores([{"ts": at(0), "passed": False}, {"ts": at(1), "passed": True}])
         self.assertTrue(engine.stop_rule(p.harness())["should_stop"])
+
+    def test_template_refuses_to_run_until_mode_and_final_counts_are_chosen(self):
+        # Copying the template unchanged must not look like a configured harness (to a person or an eval grader).
+        cfg = json.loads((TEMPLATES / "harness" / "harness.json").read_text())
+        self.assertIsNone(cfg["mode"])
+        self.assertIsNone(cfg["final_counts"])
+        p = self.project()
+        (p.root / "harness.json").write_text(json.dumps(cfg))
+        r = p.run("status")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('"mode"', r.stderr + r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+        p2 = self.project(mode="score", final_counts=None)
+        r = p2.run("status")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('"final_counts"', r.stderr + r.stdout)
+        # A pass_fail harness never compares scores, so it may leave final_counts unset.
+        self.assertEqual(self.project(mode="pass_fail", final_counts=None).run("status").returncode, 0)
 
     def test_invalid_mode_is_rejected(self):
         p = self.project(mode="whatever")
@@ -515,6 +535,14 @@ class StartAndReport(Base):
         (p.root / "settings.json").write_text(json.dumps(s))
         self.assert_start_refused(p, "Stop")
 
+    def test_start_refuses_missing_or_invalid_auditor(self):
+        for bad in (None, "{not json", '{"other": {}}', '[]'):
+            with self.subTest(agents=bad):
+                p = self.project()
+                f = p.root / "agents.json"
+                f.unlink() if bad is None else f.write_text(bad)
+                self.assert_start_refused(p, "agents.json")
+
     # A wrong type must be refused with a message, not a traceback, and must not slip past validation
     # (time_limit_minutes is only used once started_at exists, so a fresh start would not evaluate it).
     def assert_start_refused_cleanly(self, p, needle):
@@ -562,17 +590,77 @@ class TemplateFiles(unittest.TestCase):
     def test_settings_json_is_valid_and_protects_evaluator(self):
         s = json.loads((TEMPLATES / "harness" / "settings.json").read_text())
         deny = s["permissions"]["deny"]
-        for f in ("check.sh", "harness.py", "harness.json", "settings.json", "CONDITIONS.md"):
+        for f in ("check.sh", "harness.py", "harness.json", "settings.json", "CONDITIONS.md", "agents.json"):
             self.assertIn(f"Edit(./harness/{f})", deny)
         for event, sub in (("Stop", "stop"), ("PostToolUse", "post-tool"),
                            ("SessionStart", "session-start"), ("PreCompact", "pre-compact")):
             self.assertIn(f"hook {sub}", s["hooks"][event][0]["hooks"][0]["command"])
             self.assertIn(sub, engine.HOOKS)
 
+    def test_auditor_is_defined_read_only_inside_harness_dir(self):
+        # .claude/ is a protected directory: an unattended or dontAsk session can't write the auditor there,
+        # so it ships in harness/agents.json and run.sh passes it with --agents.
+        a = json.loads((TEMPLATES / "harness" / "agents.json").read_text())["auditor"]
+        self.assertEqual(sorted(a["tools"]), ["Glob", "Grep", "Read"])
+        self.assertIn("checklist.md", a["prompt"])
+        self.assertTrue(a["description"])
+        self.assertFalse((TEMPLATES / "claude").exists())
+        self.assertIn('--agents "$(cat harness/agents.json)"', (TEMPLATES / "harness" / "run.sh").read_text())
+
     def test_scripts_are_executable(self):
         for f in ("run.sh", "check.sh", "harness.py"):
             self.assertTrue(os.access(TEMPLATES / "harness" / f, os.X_OK), f)
 
+
+EVALS = TEMPLATES.parents[2] / "evals"
+
+
+def grader(path: Path) -> dict:
+    """The flat `key: value` lines of a grader's frontmatter (enough for the graders in this suite)."""
+    front = path.read_text(encoding="utf-8").split("---")[1]
+    out = {}
+    for line in front.splitlines():
+        k, sep, v = line.strip().partition(": ")
+        if sep:
+            v = v.strip()
+            out[k] = v[1:-1] if len(v) > 1 and v[0] == v[-1] == "'" else v  # YAML single quotes, no '' escapes here
+    return out
+
+
+class EvalGraders(unittest.TestCase):
+    """Graders must fail on the output they exist to catch, not pass on it by accident."""
+
+    def test_check_sh_graders_do_not_pass_on_the_unfilled_template(self):
+        # The template's comment mentions `SCORE=<数値>`: copying check.sh without implementing it must not pass.
+        template = (TEMPLATES / "harness" / "check.sh").read_text(encoding="utf-8")
+        implemented = template + './bench.sh | sed -n "s/^score: */SCORE=/p"\npython3 -m unittest -q\n'
+        commented = template + "# TODO: ./bench.sh か python3 -m unittest を呼び、SCORE= を出す\n"
+        graders = [g for g in EVALS.glob("*/graders/*.md") if grader(g).get("path") == "harness/check.sh"]
+        self.assertGreaterEqual(len(graders), 3)
+        for g in graders:
+            pattern = grader(g)["pattern"]
+            if g.stem == "custom-check-kept":
+                continue  # checks a marker the fixture wrote, not what the skill filled in
+            with self.subTest(grader=str(g.relative_to(EVALS))):
+                self.assertIsNone(re.search(pattern, template))
+                self.assertIsNone(re.search(pattern, commented))
+                self.assertIsNotNone(re.search(pattern, implemented))
+
+    def test_dot_claude_write_grader_sees_denied_writes(self):
+        # A write into .claude/ is denied in an eval run, so the file is never created and a grader over
+        # `files` passes no matter what. The attempted Write call is in the transcript, so count that instead.
+        g = grader(EVALS / "explicit-score-isucon" / "graders" / "no-dot-claude-write.md")
+        self.assertEqual((g["type"], g["tool"], g["min"], g["max"]), ("tool_used", "Write", "0", "0"))
+        call = lambda p: json.dumps({"file_path": p, "content": "x"})
+        self.assertIsNotNone(re.search(g["input_match"], call("/tmp/w/.claude/agents/auditor.md")))
+        self.assertIsNotNone(re.search(g["input_match"], call(".claude/settings.json")))
+        self.assertIsNone(re.search(g["input_match"], call("/tmp/w/harness/agents.json")))
+
+    def test_eval_prompts_use_no_absolute_dates(self):
+        # An absolute date drifts: once past it changes the right answer, and one far ahead reads as a typo,
+        # which made the agent stop and ask instead of building (seen in the 2026-11-08 eval run).
+        for prompt in EVALS.glob("*/prompt.md"):
+            self.assertIsNone(re.search(r"\d{4}-\d\d-\d\d", prompt.read_text(encoding="utf-8")), prompt)
 
 if __name__ == "__main__":
     unittest.main()
