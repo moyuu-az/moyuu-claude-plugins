@@ -6,7 +6,7 @@
 
 - [ISUCON2026 競技当日編（kawasy, Zenn）](https://zenn.dev/luvtechno/articles/isucon2026-competition-day): 完全自律の競技エージェントで優勝した記録。準備の詳細は「準備編」として別記事の予定で、ディレクトリ構成や hook の定義は書かれていない。
 - [Effective harnesses for long-running agents（Anthropic, 2025-11）](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
-- [Harness design for long-running application development（Anthropic）](https://www.anthropic.com/engineering/harness-design-long-running-apps)
+- [Harness design for long-running application development（Anthropic, 2026-03）](https://www.anthropic.com/engineering/harness-design-long-running-apps)
 - [Best practices for Claude Code](https://code.claude.com/docs/en/best-practices)
 - [Hooks reference](https://code.claude.com/docs/en/hooks)、[Configure permissions](https://code.claude.com/docs/en/permissions)、[Skills](https://code.claude.com/docs/en/skills)、[Plugin manifest reference](https://code.claude.com/docs/en/plugins/manifest-reference)
 
@@ -21,8 +21,8 @@
 | 「この構成で測ったスコアの一覧と残り時間から『あと何回走らせられるか』を計算し、その回数だけ走らせ直せるときの期待値を閾値にしました」。残り回数が減ると閾値も下がる | `harness.py` の `continuation_value` と Stop hook。最後の 1 回が採点される前提で、最適停止の漸化式 C_1 = E[X]、C_k = E[max(X, C_{k-1})] を使う |
 | 同じ構成でもスコアが 474,987〜629,638 点とばらつき、後半の変更の効果より大きかった | check の記録に commit の label を付け、同じ label の結果だけで閾値を計算する。`min_samples` 回測るまで止めない。checklist.md に「差がばらつきより大きいか」を入れる |
 | 環境に偽の指示を書いた AGENTS.md が置かれていたが、エージェントは従わなかった | SYSTEM.md で、指示の出どころをシステムプロンプトと CONDITIONS.md に限る |
-| 根拠なくボトルネックをベンチマーカー側だと判断した、自分で入れた重い JPEG のデバッグ処理が残っていた、200MB のつもりの取得で 13GB を落とした | checklist.md と SYSTEM.md の「計測の扱い」に、それぞれの失敗を防ぐ項目として入れた |
-| SSH の切断後、長い転送を切り離して実行し直した。再起動後にサービスが戻るかを確かめた | SYSTEM.md の「計測の扱い」と「最終確認」 |
+| 原因を確定しないまま、実測値からボトルネックをベンチマーカー側と判断した。自分で入れたデバッグモードの JPEG のデコードが CPU 時間の約 86% を占めていた。200MB のつもりの取得で 13GB を落とした | checklist.md と SYSTEM.md の「計測の扱い」に、それぞれを防ぐ確認の項目として入れた |
+| SSH のコマンドが返らないまま止まった転送を、接続が切れても続く形で実行し直した。再起動後にサービスが戻るかを確かめた | SYSTEM.md の「計測の扱い」と「最終確認」 |
 | 自動要約が 1 回起き、コンテキストが約 96.7 万トークンから約 2.3 万トークンになった | SessionStart hook（source が compact のとき decisions.md の末尾を渡す）と PreCompact hook |
 | 評価環境で 3 か月、100 回以上問題を解かせて、ユーザハーネスを改善した | `harness.py report` と improve の手順 |
 
