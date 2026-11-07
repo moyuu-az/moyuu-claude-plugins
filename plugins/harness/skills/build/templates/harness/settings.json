@@ -1,0 +1,59 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/harness/harness.py hook session-start"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/harness/harness.py hook post-tool"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/harness/harness.py hook stop",
+            "timeout": 3600
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/harness/harness.py hook pre-compact"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Edit(./harness/check.sh)",
+      "Edit(./harness/harness.py)",
+      "Edit(./harness/harness.json)",
+      "Edit(./harness/settings.json)",
+      "Edit(./harness/CONDITIONS.md)",
+      "Edit(./harness/SYSTEM.md)",
+      "Edit(./harness/checklist.md)",
+      "Edit(./harness/state/**)",
+      "Edit(./.claude/agents/auditor.md)",
+      "Bash(python3 harness/harness.py start*)"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "moyuu",
+  "description": "moyuu の Claude Code plugin 置き場",
+  "owner": { "name": "moyuu" },
+  "plugins": [
+    {
+      "name": "harness",
+      "source": "./plugins/harness",
+      "description": "Claude Code を人の介入なしで最後まで走らせるハーネス（評価・停止判定の hook・監査役・実行条件・起動スクリプト）を対象プロジェクトに作る"
+    }
+  ]
+}
