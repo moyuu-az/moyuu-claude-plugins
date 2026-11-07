@@ -3,5 +3,5 @@ type: regex
 target:
   source: file
   path: harness/harness.json
-pattern: '"deadline"\s*:\s*"2036-11-08T09:00:00\+09:00"'
+pattern: '"time_limit_minutes"\s*:\s*720'
 ---

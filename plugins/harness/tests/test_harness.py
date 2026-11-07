@@ -656,14 +656,11 @@ class EvalGraders(unittest.TestCase):
         self.assertIsNotNone(re.search(g["input_match"], call(".claude/settings.json")))
         self.assertIsNone(re.search(g["input_match"], call("/tmp/w/harness/agents.json")))
 
-    def test_deadline_case_stays_in_the_future(self):
-        # A deadline that has already passed changes what a correct harness looks like, so the case would drift.
-        case = EVALS / "implicit-latency-min-best"
-        d = re.search(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d", (case / "prompt.md").read_text()).group()
-        self.assertGreater(engine.parse_time(d), engine.now() + engine.dt.timedelta(days=365))
-        pattern = grader(case / "graders" / "deadline-set.md")["pattern"]
-        self.assertIsNotNone(re.search(pattern, json.dumps({"deadline": d}, indent=2)))
-
+    def test_eval_prompts_use_no_absolute_dates(self):
+        # An absolute date drifts: once past it changes the right answer, and one far ahead reads as a typo,
+        # which made the agent stop and ask instead of building (seen in the 2026-11-08 eval run).
+        for prompt in EVALS.glob("*/prompt.md"):
+            self.assertIsNone(re.search(r"\d{4}-\d\d-\d\d", prompt.read_text(encoding="utf-8")), prompt)
 
 if __name__ == "__main__":
     unittest.main()
