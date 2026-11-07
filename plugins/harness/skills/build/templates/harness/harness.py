@@ -467,17 +467,23 @@ def validate_setup(h: Harness) -> None:
     A crashing Stop hook lets the agent stop (Stop has no fail-closed option), and `claude -p`
     silently ignores a settings file that fails validation, so both must be caught before launch.
     """
+    # Checked by type, not via deadline(): time_limit_minutes is only used once started_at exists.
+    limit = h.cfg.get("time_limit_minutes")
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, (int, float))):
+        raise SystemExit('harness: harness.json "time_limit_minutes" must be a number or null')
     try:
         h.deadline()
-    except ValueError as e:
+    except (ValueError, TypeError, AttributeError) as e:
         raise SystemExit(f"harness: harness.json deadline is not an ISO 8601 time: {e}")
     if not h.cfg.get("check_command"):
         raise SystemExit('harness: harness.json has no "check_command"')
     path = h.root / "settings.json"
     try:
-        hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
-    except (OSError, json.JSONDecodeError, AttributeError) as e:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
         raise SystemExit(f"harness: cannot read {path}: {e}")
+    hooks = settings.get("hooks") if isinstance(settings, dict) else None
+    hooks = hooks if isinstance(hooks, dict) else {}
     missing = [ev for ev in ("SessionStart", "PostToolUse", "Stop", "PreCompact") if not hooks.get(ev)]
     if missing:
         raise SystemExit(f"harness: {path} has no hook for {', '.join(missing)}")

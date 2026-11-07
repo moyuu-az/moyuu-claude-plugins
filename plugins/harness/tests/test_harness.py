@@ -515,6 +515,26 @@ class StartAndReport(Base):
         (p.root / "settings.json").write_text(json.dumps(s))
         self.assert_start_refused(p, "Stop")
 
+    # A wrong type must be refused with a message, not a traceback, and must not slip past validation
+    # (time_limit_minutes is only used once started_at exists, so a fresh start would not evaluate it).
+    def assert_start_refused_cleanly(self, p, needle):
+        self.assert_start_refused(p, needle)
+        self.assertNotIn("Traceback", p.run("start").stderr)
+        self.assertFalse((p.root / "state" / "started_at").exists())
+
+    def test_start_refuses_non_numeric_time_limit(self):
+        self.assert_start_refused_cleanly(self.project(time_limit_minutes="60"), "time_limit_minutes")
+
+    def test_start_refuses_non_string_deadline(self):
+        self.assert_start_refused_cleanly(self.project(deadline=123), "deadline")
+
+    def test_start_refuses_settings_whose_hooks_is_not_an_object(self):
+        for bad in ('{"hooks": []}', '{"hooks": null}', '[]'):
+            with self.subTest(settings=bad):
+                p = self.project()
+                (p.root / "settings.json").write_text(bad)
+                self.assert_start_refused_cleanly(p, "Stop")
+
 
 class Status(Base):
     def test_status_shows_failed_headless_run(self):
