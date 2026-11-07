@@ -461,7 +461,30 @@ def run_hook(event: str) -> int:
 
 # ---------------------------------------------------------------- start / report
 
+def validate_setup(h: Harness) -> None:
+    """Refuse to launch a run whose safety net would silently be missing.
+
+    A crashing Stop hook lets the agent stop (Stop has no fail-closed option), and `claude -p`
+    silently ignores a settings file that fails validation, so both must be caught before launch.
+    """
+    try:
+        h.deadline()
+    except ValueError as e:
+        raise SystemExit(f"harness: harness.json deadline is not an ISO 8601 time: {e}")
+    if not h.cfg.get("check_command"):
+        raise SystemExit('harness: harness.json has no "check_command"')
+    path = h.root / "settings.json"
+    try:
+        hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+    except (OSError, json.JSONDecodeError, AttributeError) as e:
+        raise SystemExit(f"harness: cannot read {path}: {e}")
+    missing = [ev for ev in ("SessionStart", "PostToolUse", "Stop", "PreCompact") if not hooks.get(ev)]
+    if missing:
+        raise SystemExit(f"harness: {path} has no hook for {', '.join(missing)}")
+
+
 def start(h: Harness) -> None:
+    validate_setup(h)
     keep = {".gitignore"}
     old = [p for p in h.state.iterdir() if p.name not in keep and p.name != "archive"]
     if old:

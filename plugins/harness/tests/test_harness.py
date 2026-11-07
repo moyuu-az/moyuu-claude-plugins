@@ -487,6 +487,34 @@ class StartAndReport(Base):
         rep = p.run("report").stdout
         self.assertIn(archives[0].name, rep)
 
+    # Stop fails open when its hook crashes, and `claude -p` silently ignores an invalid settings file,
+    # so a broken setup must be refused before the run starts, without touching the previous run's state.
+    def assert_start_refused(self, p, needle):
+        p.write_scores([{"ts": at(0), "score": 10}])
+        r = p.run("start")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(needle, r.stderr + r.stdout)
+        self.assertTrue((p.root / "state" / "scores.jsonl").exists())
+        self.assertFalse((p.root / "state" / "archive").exists())
+
+    def test_start_refuses_bad_deadline(self):
+        self.assert_start_refused(self.project(deadline="tomorrow noon"), "deadline")
+
+    def test_start_refuses_missing_check_command(self):
+        self.assert_start_refused(self.project(check_command=""), "check_command")
+
+    def test_start_refuses_invalid_settings_json(self):
+        p = self.project()
+        (p.root / "settings.json").write_text('{"hooks": {')
+        self.assert_start_refused(p, "settings.json")
+
+    def test_start_refuses_settings_without_stop_hook(self):
+        p = self.project()
+        s = json.loads((p.root / "settings.json").read_text())
+        del s["hooks"]["Stop"]
+        (p.root / "settings.json").write_text(json.dumps(s))
+        self.assert_start_refused(p, "Stop")
+
 
 class Status(Base):
     def test_status_shows_failed_headless_run(self):
