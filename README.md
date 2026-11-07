@@ -22,7 +22,7 @@ claude plugin install harness@moyuu
 
 ## harness の使い方
 
-1. ハーネスを置きたいプロジェクトで `/harness:build` を実行する。課題の種類、評価の方法、締め切りなどを決め、`harness/` と `.claude/agents/auditor.md` を作る。
+1. ハーネスを置きたいプロジェクトで `/harness:build` を実行する。課題の種類、評価の方法、締め切りなどを決め、`harness/` を作る。
 2. `harness/run.sh` で無人実行を始める。経過は `python3 harness/harness.py status` で見られる。
 3. 終わったら差分と `harness/decisions.md` を読み、取り込むかを決める。
 

@@ -12,7 +12,9 @@ cd "$(dirname "$0")/.."
 python3 harness/harness.py start
 
 # hook と deny は harness/settings.json にだけ置く。--settings で渡すので、この起動以外のセッションには効かない。
+# 監査役も --agents で渡す。.claude/ は保護されたディレクトリで、無人の権限では書き込めないことがある。
 args=(--settings harness/settings.json
+      --agents "$(cat harness/agents.json)"
       --append-system-prompt "$(cat harness/SYSTEM.md)"
       --permission-mode "${HARNESS_PERMISSION_MODE:-auto}")
 if [[ -n "${HARNESS_MODEL:-}" ]]; then args+=(--model "$HARNESS_MODEL"); fi

@@ -52,7 +52,7 @@
       "Edit(./harness/SYSTEM.md)",
       "Edit(./harness/checklist.md)",
       "Edit(./harness/state/**)",
-      "Edit(./.claude/agents/auditor.md)",
+      "Edit(./harness/agents.json)",
       "Bash(python3 harness/harness.py start*)"
     ]
   }

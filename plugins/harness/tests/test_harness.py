@@ -515,6 +515,14 @@ class StartAndReport(Base):
         (p.root / "settings.json").write_text(json.dumps(s))
         self.assert_start_refused(p, "Stop")
 
+    def test_start_refuses_missing_or_invalid_auditor(self):
+        for bad in (None, "{not json", '{"other": {}}', '[]'):
+            with self.subTest(agents=bad):
+                p = self.project()
+                f = p.root / "agents.json"
+                f.unlink() if bad is None else f.write_text(bad)
+                self.assert_start_refused(p, "agents.json")
+
     # A wrong type must be refused with a message, not a traceback, and must not slip past validation
     # (time_limit_minutes is only used once started_at exists, so a fresh start would not evaluate it).
     def assert_start_refused_cleanly(self, p, needle):
@@ -562,12 +570,22 @@ class TemplateFiles(unittest.TestCase):
     def test_settings_json_is_valid_and_protects_evaluator(self):
         s = json.loads((TEMPLATES / "harness" / "settings.json").read_text())
         deny = s["permissions"]["deny"]
-        for f in ("check.sh", "harness.py", "harness.json", "settings.json", "CONDITIONS.md"):
+        for f in ("check.sh", "harness.py", "harness.json", "settings.json", "CONDITIONS.md", "agents.json"):
             self.assertIn(f"Edit(./harness/{f})", deny)
         for event, sub in (("Stop", "stop"), ("PostToolUse", "post-tool"),
                            ("SessionStart", "session-start"), ("PreCompact", "pre-compact")):
             self.assertIn(f"hook {sub}", s["hooks"][event][0]["hooks"][0]["command"])
             self.assertIn(sub, engine.HOOKS)
+
+    def test_auditor_is_defined_read_only_inside_harness_dir(self):
+        # .claude/ is a protected directory: an unattended or dontAsk session can't write the auditor there,
+        # so it ships in harness/agents.json and run.sh passes it with --agents.
+        a = json.loads((TEMPLATES / "harness" / "agents.json").read_text())["auditor"]
+        self.assertEqual(sorted(a["tools"]), ["Glob", "Grep", "Read"])
+        self.assertIn("checklist.md", a["prompt"])
+        self.assertTrue(a["description"])
+        self.assertFalse((TEMPLATES / "claude").exists())
+        self.assertIn('--agents "$(cat harness/agents.json)"', (TEMPLATES / "harness" / "run.sh").read_text())
 
     def test_scripts_are_executable(self):
         for f in ("run.sh", "check.sh", "harness.py"):

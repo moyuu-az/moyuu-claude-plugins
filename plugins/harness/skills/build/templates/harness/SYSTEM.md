@@ -8,7 +8,7 @@
 
 ## 評価系に触らない
 
-次のファイルは評価のためのもので、変更しない: `harness/check.sh`、`harness/harness.py`、`harness/harness.json`、`harness/CONDITIONS.md`、`harness/SYSTEM.md`、`harness/checklist.md`、`harness/settings.json`、`harness/state/` の中身、`.claude/agents/auditor.md`。テストを消す、弱める、skip にする変更もしない。評価系に誤りがあると判断したら、変更せずに decisions.md に根拠を書き、評価系の外で作業を続ける。
+次のファイルは評価のためのもので、変更しない: `harness/check.sh`、`harness/harness.py`、`harness/harness.json`、`harness/CONDITIONS.md`、`harness/SYSTEM.md`、`harness/checklist.md`、`harness/settings.json`、`harness/agents.json`、`harness/state/` の中身。テストを消す、弱める、skip にする変更もしない。評価系に誤りがあると判断したら、変更せずに decisions.md に根拠を書き、評価系の外で作業を続ける。
 
 ## 1 回の改善の進め方
 

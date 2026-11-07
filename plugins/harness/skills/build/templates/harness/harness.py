@@ -487,6 +487,13 @@ def validate_setup(h: Harness) -> None:
     missing = [ev for ev in ("SessionStart", "PostToolUse", "Stop", "PreCompact") if not hooks.get(ev)]
     if missing:
         raise SystemExit(f"harness: {path} has no hook for {', '.join(missing)}")
+    agents_path = h.root / "agents.json"
+    try:
+        agents = json.loads(agents_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise SystemExit(f"harness: cannot read {agents_path}: {e}")
+    if not (isinstance(agents, dict) and isinstance(agents.get("auditor"), dict)):
+        raise SystemExit(f"harness: {agents_path} must define an \"auditor\" agent")
 
 
 def start(h: Harness) -> None:

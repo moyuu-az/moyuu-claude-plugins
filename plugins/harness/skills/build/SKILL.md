@@ -21,8 +21,8 @@ argument-hint: "[build|improve] [対象ディレクトリ]"
 | `harness/SYSTEM.md` | 無人で進めるときの作業規則。システムプロンプトに追加する |
 | `harness/checklist.md` | 監査役が判断を突き合わせるチェック項目 |
 | `harness/decisions.md` | エージェントが判断を書き残す記録 |
+| `harness/agents.json` | 読み取り専用の監査役。`run.sh` が `--agents` で渡す |
 | `harness/run.sh` | 起動スクリプト |
-| `.claude/agents/auditor.md` | 読み取り専用の監査役 |
 
 hook の働きは次のとおり。
 
@@ -66,11 +66,10 @@ hook の働きは次のとおり。
 
 ### 3. テンプレートを置く
 
-対象ディレクトリで実行する。既存のファイルは上書きしない（`cp -n`）。上書きされなかったファイルがあれば、中身を確かめてから手で合わせる。macOS の `cp -n` は、コピーしなかったファイルがあると何も表示せずに終了コード 1 を返す。どのファイルが既にあったかは、コピーの前に `ls -A harness .claude/agents` で確かめておく。
+対象ディレクトリで実行する。既存のファイルは上書きしない（`cp -n`）。上書きされなかったファイルがあれば、中身を確かめてから手で合わせる。macOS の `cp -n` は、コピーしなかったファイルがあると何も表示せずに終了コード 1 を返す。どのファイルが既にあったかは、コピーの前に `ls -A harness` で確かめておく。ファイルはすべて `harness/` の中に置く。`.claude/` は保護されたディレクトリで、権限の設定によっては書き込めないためである。
 
 ```bash
 cp -Rn "${CLAUDE_SKILL_DIR}/templates/harness" ./
-mkdir -p .claude/agents && cp -n "${CLAUDE_SKILL_DIR}/templates/claude/agents/auditor.md" .claude/agents/
 ```
 
 ### 4. 中身を埋める
