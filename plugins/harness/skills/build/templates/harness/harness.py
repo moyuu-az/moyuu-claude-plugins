@@ -390,6 +390,9 @@ def hook_stop(h: Harness, payload: dict) -> int:
 
 
 def hook_post_tool(h: Harness, payload: dict) -> int:
+    # Subagent tool calls (the auditor's Reads) fire this hook too; a one-shot nudge spent there never reaches the main agent.
+    if payload.get("agent_id"):
+        return 0
     notes = []
     rem = h.remaining_seconds()
     final_min = h.cfg.get("final_check_minutes")

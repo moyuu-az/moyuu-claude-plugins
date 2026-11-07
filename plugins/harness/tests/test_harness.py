@@ -440,6 +440,20 @@ class PostToolHook(Base):
         _, out = p.hook("post-tool", now=at(100))
         self.assertIsNone(out)
 
+    def test_subagent_tool_calls_do_not_consume_one_shot_nudges(self):
+        # PostToolUse also fires for tool calls inside subagents (input carries agent_id).
+        # If the auditor's own Read consumed the nudge, the main agent would never see it.
+        p = self.project(mode="score", time_limit_minutes=120, final_check_minutes=30, stall_minutes=30)
+        p.start_at()
+        p.write_scores([{"ts": at(0), "score": 10}])
+        proc, out = p.hook("post-tool", {"agent_id": "a1", "agent_type": "auditor"}, now=at(95))
+        self.assertEqual(proc.returncode, 0)
+        self.assertIsNone(out)
+        _, out = p.hook("post-tool", {"tool_name": "Bash"}, now=at(96))
+        text = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("最終確認", text)
+        self.assertIn("改善していません", text)
+
 
 class SessionHooks(Base):
     def test_session_start_sets_clock_once_and_restores_notes_after_compact(self):
