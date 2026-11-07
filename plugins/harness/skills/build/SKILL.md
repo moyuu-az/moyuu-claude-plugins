@@ -66,7 +66,7 @@ hook の働きは次のとおり。
 
 ### 3. テンプレートを置く
 
-既存のファイルは上書きしない（`cp -n`）。上書きされなかったファイルがあれば、中身を確かめてから手で合わせる。
+対象ディレクトリで実行する。既存のファイルは上書きしない（`cp -n`）。上書きされなかったファイルがあれば、中身を確かめてから手で合わせる。macOS の `cp -n` は、コピーしなかったファイルがあると何も表示せずに終了コード 1 を返す。どのファイルが既にあったかは、コピーの前に `ls -A harness .claude/agents` で確かめておく。
 
 ```bash
 cp -Rn "${CLAUDE_SKILL_DIR}/templates/harness" ./
@@ -89,7 +89,7 @@ mkdir -p .claude/agents && cp -n "${CLAUDE_SKILL_DIR}/templates/claude/agents/au
 1. `python3 harness/harness.py check` が想定どおりの合否と SCORE を返す。`score` の課題では同じ状態で 3 回測り、ばらつきの大きさを CONDITIONS.md の「コードからは分からない前提」に書く。
 2. `echo '{}' | python3 harness/harness.py hook stop` が、まだ終了条件を満たしていないときに `"decision": "block"` を返す。
 3. `python3 harness/harness.py status` と `python3 harness/harness.py stop-rule` が設定どおりの値を示す。ここまでの記録は、run.sh が起動時に `harness/state/archive/` へ移す。
-4. 短い試運転をするかをユーザーに聞く。費用がかかるので、するなら `HARNESS_MAX_BUDGET_USD=1 harness/run.sh` のように上限を下げ、`harness/state/runs/` のログで hook が働いたかを確かめる。
+4. 短い試運転をするかをユーザーに聞く。費用がかかるので、するなら `HARNESS_MAX_BUDGET_USD=1 harness/run.sh` のように上限を下げ、`harness/state/runs/` のログで hook が働いたかを確かめる。ログの `system/init` の `permissionMode` が、選んだモード（既定は `auto`）になっているかも見る。auto モードを使えない環境では Manual で始まり、確認が必要な操作がすべて拒否される。
 
 ### 6. 引き渡す
 

@@ -26,7 +26,9 @@ mkdir -p harness/state/runs
 log="harness/state/runs/$(date +%Y%m%d-%H%M%S).jsonl"
 echo "[harness] streaming events to $log"
 rc=0
+# --permission-prompts none: 確認が必要な操作は拒否され、エージェントには「承認する人はいないので再試行しない」と伝わる。
 claude -p "$prompt" "${args[@]}" \
+  --permission-prompts none \
   --max-budget-usd "${HARNESS_MAX_BUDGET_USD:-20}" \
   --output-format stream-json --verbose > "$log" || rc=$?
 # 認証切れや予算超過で止まっても、どこまで進んだかは必ず表示する（status が最新の実行ログの結果も示す）。
