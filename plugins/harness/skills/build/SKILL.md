@@ -56,7 +56,7 @@ hook の働きは次のとおり。
 | 課題の種類 | `mode` | テストやビルドを通す課題は `pass_fail`、数値を上げ下げする課題は `score` |
 | 評価の方法 | `check_command` | 既存のテスト、ベンチマーク、負荷試験。なければ check.sh に書く |
 | 数値の向き | `direction` | 大きいほど良いなら `max`、レイテンシなどは `min` |
-| 何が最終結果か | `final_counts` | 最後の 1 回が採点される課題は `last`（ISUCON など）、最良の結果を残せる課題は `best` |
+| 何が最終結果か | `final_counts` | `score` の課題だけで使う。最後の 1 回が採点される課題は `last`（ISUCON など）、最良の結果を残せる課題は `best` |
 | 締め切り | `deadline` か `time_limit_minutes` | 絶対時刻なら deadline、起動からの時間なら time_limit_minutes |
 | 目標 | `target_score` | 達したら止めてよい値。なければ null |
 | 予算 | `HARNESS_MAX_BUDGET_USD` | run.sh の環境変数 |
@@ -75,7 +75,7 @@ cp -Rn "${CLAUDE_SKILL_DIR}/templates/harness" ./
 ### 4. 中身を埋める
 
 - `harness/check.sh`: いちばん大事なファイル。同じコードなら同じ判定になるように書く。エージェントが変更できるファイルだけで合否が決まると、テストを書き換えて通すような抜け道ができる。判定に使うテストや期待値は、deny で守るか check.sh の中に置く。
-- `harness/harness.json`: 手順 2 で決めた値を入れる。
+- `harness/harness.json`: 手順 2 で決めた値を入れる。テンプレートの `mode` と `final_counts` は null になっていて、決めずに残すと `harness.py` が動かない。
 - `harness/CONDITIONS.md`: コードを読めば分かることは書かない。目的、完了の定義、締め切り、環境、禁止事項、コードからは分からない前提を書く。認証情報の値は書かず、置き場所だけを書く。
 - `harness/checklist.md`: 「この課題に固有の項目」を、その分野で見落としやすい点で埋める。
 - `harness/settings.json`: 課題に合わせて deny を足す。テストを通す課題なら、テストのディレクトリを `Edit(./tests/**)` のように守る。deny は Claude Code の組み込みツールと、cat・sed・tee などの認識できる Bash コマンドにしか効かない。スクリプトの中から書き込むことは防げないので、check.sh 側でも改ざんを検出できるようにする。

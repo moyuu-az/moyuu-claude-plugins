@@ -36,7 +36,8 @@ class Project:
         shutil.copytree(TEMPLATES / "harness", self.dir / "harness")
         self.root = self.dir / "harness"
         base = json.loads((self.root / "harness.json").read_text())
-        base.update(cfg)
+        # The template leaves the task-specific choices unset on purpose; tests pick the common ones.
+        base.update({"mode": "score", "final_counts": "last"}, **cfg)
         (self.root / "harness.json").write_text(json.dumps(base))
 
     def write_scores(self, rows):
@@ -231,6 +232,24 @@ class StopRule(Base):
         self.assertFalse(engine.stop_rule(p.harness())["should_stop"])
         p.write_scores([{"ts": at(0), "passed": False}, {"ts": at(1), "passed": True}])
         self.assertTrue(engine.stop_rule(p.harness())["should_stop"])
+
+    def test_template_refuses_to_run_until_mode_and_final_counts_are_chosen(self):
+        # Copying the template unchanged must not look like a configured harness (to a person or an eval grader).
+        cfg = json.loads((TEMPLATES / "harness" / "harness.json").read_text())
+        self.assertIsNone(cfg["mode"])
+        self.assertIsNone(cfg["final_counts"])
+        p = self.project()
+        (p.root / "harness.json").write_text(json.dumps(cfg))
+        r = p.run("status")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('"mode"', r.stderr + r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+        p2 = self.project(mode="score", final_counts=None)
+        r = p2.run("status")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('"final_counts"', r.stderr + r.stdout)
+        # A pass_fail harness never compares scores, so it may leave final_counts unset.
+        self.assertEqual(self.project(mode="pass_fail", final_counts=None).run("status").returncode, 0)
 
     def test_invalid_mode_is_rejected(self):
         p = self.project(mode="whatever")

@@ -5,5 +5,4 @@ target:
   path: harness/CONDITIONS.md
 pattern: 'TODO'
 match: not_contains
-arm: with-only
 ---
