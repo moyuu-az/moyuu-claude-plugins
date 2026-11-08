@@ -51,4 +51,10 @@ skill の振る舞いは `claude plugin eval` で測る。ケースは `plugins/
 cd plugins/harness && claude plugin eval . --scaffold --trust-plugin --allow-tools Write Edit -j 2 --max-cost-usd 40
 ```
 
-ケースは Bash を許可していない。`~/.aws/config` に `credential_process` があると、Bash を許可した eval は動かないためである。`cp` と `harness.py check` の実行は、単体テストで確かめる。
+skill-eval のケースは `plugins/skill-eval/evals/` にある（全ケースで $3〜4）。
+
+```bash
+cd plugins/skill-eval && claude plugin eval . --scaffold --trust-plugin -j 2 --max-cost-usd 10
+```
+
+どちらのケースも Bash を許可していない。`~/.aws/config` に `credential_process` があると、Bash を許可した eval は動かないためである。`cp` と `harness.py check` の実行は、単体テストで確かめる。
