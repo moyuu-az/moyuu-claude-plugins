@@ -24,7 +24,7 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/audit.py" <plugin のディレクトリ>
 
 `case.yaml` に `scaffold_script` があるケースは、`--scaffold` を付けたときだけ「何もしなかった実行」まで点検する。scaffold はユーザーの権限で bash を動かすので、付ける前に、ケースを書いたのがユーザー自身か組織かを確かめる。
 
-スクリプトは、各ケースについて「Claude が tool を 1 回も呼ばず、何も答えず、ワークスペースが scaffold の作ったままの実行」を想定し、費用のかからない grader（regex、tool_used、tool_order、file_exists）で判定する。そこで合格する grader は、作業をした証拠になっていない。llm と baseline の grader は判定できないので、落ちるものとして点数を出す。
+スクリプトは、各ケースについて「Claude が tool を 1 回も呼ばず、何も答えず、ワークスペースが scaffold の作ったままの実行」を想定し、費用のかからない grader（regex、tool_used、tool_order、file_exists）で判定する。そこで合格する grader は、作業をした証拠になっていない。llm と baseline の grader と、`target: trace` の regex は判定できないので、落ちるものとして点数を出す。trace には、何もしなかった実行でもセッションの開始や終了のメッセージが入り、その中身をここでは再現できないためである。
 
 結果は 3 段階で出る。
 
@@ -88,4 +88,4 @@ claude plugin eval <plugin のディレクトリ> --case <ケース名> --runs 1
 - **Bash を許すケースは OS の sandbox の中で動く（公式）。** `~/.aws/config` に `credential_process` があるマシンでは、sandbox を作れずに起動を断った（実測）。Bash を外して Read、Write、Edit だけで済むケースにするか、その設定のないマシンで実行する。
 - **並列数は 2 程度にする（実測）。** `-j 4` では API の再試行が重なり、タイムアウトするケースが出た。並列の実行は 1 つの rate limit を分け合う。
 - **長い返答の llm 判定はぶれる（実測）。** 点検結果のような長い返答を既定の判定モデルで見ると、指摘が書いてあっても FAIL になった（9 回中 3 回）。決まった語で見分けられるものは regex にし、llm は短い返答に使う。
-- **max_turns の既定は 10（公式）。** ファイルを作るケースでは足りず、上限に達すると実行エラーとして点数が下がる。
+- **max_turns の既定は 10（公式）。** 上限に達すると実行エラーとして記録され、たいてい点数が下がる（公式）。ファイルを作るケースでは足りないことが多い。
