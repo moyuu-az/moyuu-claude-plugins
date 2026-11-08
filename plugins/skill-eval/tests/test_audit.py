@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -280,22 +281,22 @@ class LazyRun(TestCase):
         s = self.suite({"c": self.case(g=grader(type="regex", target={"source": "file", "path": "app/config.yml"}, pattern="mode"))})
         out = s.run()[1]
         self.assertFinding(out, "INFO", "c", "--scaffold")
-        self.assertNoFinding(out, "c / g", "怠けた")
+        self.assertNoFinding(out, "c / g", "でも合格します")
 
     def test_grader_that_passes_on_the_scaffold_alone(self):
         weak = grader(type="regex", target={"source": "file", "path": "app/config.yml"}, pattern="mode")
         strong = grader(type="regex", target={"source": "file", "path": "app/config.yml"}, pattern="'mode: final'")
         out = self.suite({"c": self.case(weak=weak, strong=strong)}).run("--scaffold")[1]
-        self.assertFinding(out, "WARN", "c / weak", "怠けた実行")
-        self.assertNoFinding(out, "c / strong", "怠けた実行")
+        self.assertFinding(out, "WARN", "c / weak", "でも合格します")
+        self.assertNoFinding(out, "c / strong", "でも合格します")
 
     def test_case_that_passes_doing_nothing_is_an_error(self):
         weak = grader(type="regex", target={"source": "file", "path": "app/config.yml"}, pattern="mode")
         quiet = grader(type="regex", pattern="error", match="not_contains")
         code, out = self.suite({"c": self.case(weak=weak, quiet=quiet)}).run("--scaffold")
         self.assertEqual(code, 1)
-        self.assertFinding(out, "ERROR", "c", "何もしなくても 1.00")
-        self.assertNoFinding(out, "c / quiet", "怠けた")  # a "never" check is meant to pass here
+        self.assertFinding(out, "ERROR", "c", "何もしなかった実行でも 1.00")
+        self.assertNoFinding(out, "c / quiet", "でも合格します")  # a "never" check is meant to pass here
 
     def test_case_of_never_checks_only_is_a_warning(self):
         quiet = grader(type="regex", pattern="error", match="not_contains")
@@ -307,14 +308,14 @@ class LazyRun(TestCase):
         weak = grader(type="regex", target={"source": "file", "path": "app/config.yml"}, pattern="mode")
         strong = grader(type="regex", target={"source": "file", "path": "app/config.yml"}, pattern="final")
         s = self.suite({"c": self.case(weak=weak, strong=strong)})
-        self.assertNoFinding(s.run("--scaffold")[1], "c", "何もしなくても")
-        self.assertFinding(s.run("--scaffold", "--threshold", "0.5")[1], "ERROR", "c", "何もしなくても 0.50")
+        self.assertNoFinding(s.run("--scaffold")[1], "c", "でも 1.00 点")
+        self.assertFinding(s.run("--scaffold", "--threshold", "0.5")[1], "ERROR", "c", "何もしなかった実行でも 0.50")
 
     def test_not_contains_on_a_scaffold_file_still_holding_todo_fails(self):
         filled = grader(type="regex", target={"source": "file", "path": "app/notes.md"}, pattern="TODO", match="not_contains")
         missing = grader(type="regex", target={"source": "file", "path": "app/absent.md"}, pattern="TODO", match="not_contains")
         out = self.suite({"c": self.case(filled=filled, missing=missing)}).run("--scaffold")[1]
-        self.assertNoFinding(out, "c / filled", "怠けた")
+        self.assertNoFinding(out, "c / filled", "でも合格します")
         self.assertFinding(out, "INFO", "c", "判定できない grader: missing")
 
     def test_file_exists_on_a_scaffold_file_never_passes(self):
@@ -335,14 +336,14 @@ class LazyRun(TestCase):
         out = self.suite({"c": self.case(made=made, final=final, listed=listed)}).run("--scaffold", "--overlay", str(ov))[1]
         self.assertFinding(out, "WARN", "c / made", "重ねた状態")
         self.assertFinding(out, "WARN", "c / final", "重ねた状態")
-        self.assertNoFinding(out, "c / listed", "怠けた")  # config.yml existed before: it was only edited
+        self.assertNoFinding(out, "c / listed", "でも合格します")  # config.yml existed before: it was only edited
 
     def test_skill_and_with_only_graders_are_left_out_of_the_score(self):
         skill = grader(type="tool_used", tool="Skill", input_match="build", min=0)
         with_only = grader(type="tool_used", tool="Read", min=0, arm="with-only")
         real = grader(type="regex", target={"source": "file", "path": "app/config.yml"}, pattern="final")
         out = self.suite({"c": self.case(skill=skill, with_only=with_only, real=real)}).run("--scaffold")[1]
-        self.assertNoFinding(out, "c", "何もしなくても")
+        self.assertNoFinding(out, "c", "でも 1.00 点")
         c = audit.Case("c", Path("."), graders=[audit.Grader("s", {"type": "tool_used", "tool": "Skill"}, "")])
         self.assertEqual([g.name for g in audit.scored(c)], ["s"])  # all excluded: scored normally
 
@@ -371,15 +372,33 @@ class LazyRun(TestCase):
         env["fixture.sh"] = 'echo "${AUDIT_TEST_SECRET:-}" > env.txt\n'
         with mock.patch.dict(os.environ, {"AUDIT_TEST_SECRET": "SECRET"}):
             out = self.suite({"c": env}).run("--scaffold")[1]
-        self.assertNoFinding(out, "c / g", "怠けた")  # the shell's other variables do not reach the scaffold
+        self.assertNoFinding(out, "c / g", "でも合格します")  # the shell's other variables do not reach the scaffold
 
     def test_case_glob_limits_the_lazy_run_only(self):
         weak = grader(type="regex", target={"source": "file", "path": "app/config.yml"}, pattern="mode")
         out = self.suite({"c": self.case(weak=weak)}).run("--scaffold", "--case", "other*")[1]
-        self.assertNoFinding(out, "c / weak", "怠けた")
+        self.assertNoFinding(out, "c / weak", "でも合格します")
 
 
 class RealSuite(unittest.TestCase):
+    def test_finds_every_fault_planted_in_the_eval_fixture(self):
+        # The skill's own eval cases grade replies on these four faults; the script must see them too.
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws)
+        fixture = REPO / "plugins" / "skill-eval" / "evals" / "_fixture" / "myplug.sh"
+        subprocess.run(["bash", str(fixture)], cwd=ws, check=True)
+        (ws / "lazy").mkdir()
+        shutil.copy(ws / "myplug" / "skills" / "report" / "templates" / "report.md", ws / "lazy")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = audit.main([str(ws / "myplug"), "--overlay", str(ws / "lazy"), "--case", "weekly"])
+        out = buf.getvalue()
+        self.assertEqual(code, 1, out)
+        for expected in ("[WARN] weekly / skill-fired: プロンプトが /myplug:report", "[WARN] weekly: プロンプトに絶対日付",
+                         "[WARN] off-topic / never: Skill の grader は既定で点数から外れます", "[WARN] weekly / has-result: 手を抜いた出力",
+                         "[ERROR] weekly: 手を抜いた出力でも 1.00"):
+            self.assertIn(expected, out)
+
     def test_harness_suite_has_no_errors(self):
         harness = REPO / "plugins" / "harness"
         buf = io.StringIO()

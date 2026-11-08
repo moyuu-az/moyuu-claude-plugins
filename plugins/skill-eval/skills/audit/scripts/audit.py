@@ -391,7 +391,7 @@ def scored(case: Case) -> list[Grader]:
 def lazy_checks(case: Case, scaffold_ok: bool, overlay: Path | None, threshold: float) -> list[Finding]:
     out: list[Finding] = []
     if case.scaffold and not scaffold_ok:
-        return [Finding(INFO, case.name, None, "scaffold があるので怠けた実行の点検を飛ばしました。--scaffold を付けると点検します")]
+        return [Finding(INFO, case.name, None, "scaffold があるので、何もしなかった実行の点検を飛ばしました。--scaffold を付けると点検します")]
     tmp = Path(tempfile.mkdtemp(prefix="eval-audit-"))
     try:
         ws = tmp / "workspace"
@@ -416,7 +416,7 @@ def lazy_checks(case: Case, scaffold_ok: bool, overlay: Path | None, threshold: 
                 try:
                     re.compile(str(s.get("pattern", "")))
                 except re.error:
-                    out.append(Finding(INFO, case.name, g.name, "Python で読めない正規表現なので、怠けた実行での判定を飛ばしました"))
+                    out.append(Finding(INFO, case.name, g.name, "Python で読めない正規表現なので、この点検での判定を飛ばしました"))
 
         weights = {g.name: float(g.spec.get("weight", 1) or 1) for g in case.graders}
         counted = scored(case)
@@ -425,17 +425,18 @@ def lazy_checks(case: Case, scaffold_ok: bool, overlay: Path | None, threshold: 
         total = sum(weights[g.name] for g in counted)
         score = sum(weights[g.name] for g in passed) / total if total else 0.0
         state = "scaffold の状態" + (f"に {overlay.name}/ を重ねた状態" if overlay else "のまま")
+        lead = "手を抜いた出力" if overlay else "何もしなかった実行"
         if score >= threshold and all(is_guard(g) for g in passed):
             out.append(Finding(WARN, case.name, None,
                                "「しないこと」を見る grader だけで合格します。依頼に応えたかを見る grader（返答の llm など）を足してください"))
         elif score >= threshold:
             out.append(Finding(ERROR, case.name, None,
-                               f"何もしなくても {score:.2f} 点で合格します（{state}、tool 呼び出しなし、返答なし）"))
+                               f"{lead}でも {score:.2f} 点で合格します（{state}、tool 呼び出しなし、返答なし）"))
         for g in passed:
             if not is_guard(g):
-                out.append(Finding(WARN, case.name, g.name, f"怠けた実行（{state}）でも合格します。作業をした証拠になっていません"))
+                out.append(Finding(WARN, case.name, g.name, f"{lead}（{state}）でも合格します。作業をした証拠になっていません"))
         if unknown:
-            out.append(Finding(INFO, case.name, None, f"ここでは判定できない grader: {', '.join(unknown)}（怠けた実行の点数 {score:.2f} は、これらが落ちるとしたときの値）"))
+            out.append(Finding(INFO, case.name, None, f"ここでは判定できない grader: {', '.join(unknown)}（{lead}の点数 {score:.2f} は、これらが落ちるとしたときの値）"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out
@@ -448,7 +449,7 @@ def main(argv=None) -> int:
     ap.add_argument("plugin", nargs="?", default=".", help="plugin のディレクトリ（既定: カレント）")
     ap.add_argument("--case", default="*", help="点検するケース名の glob")
     ap.add_argument("--scaffold", action="store_true", help="ケースの scaffold_script を実行する（自分で書いたケースにだけ使う）")
-    ap.add_argument("--overlay", type=Path, help="怠けた出力として scaffold の上に重ねるディレクトリ（中身は Claude が作ったファイルとして扱う）")
+    ap.add_argument("--overlay", type=Path, help="手を抜いた出力として scaffold の上に重ねるディレクトリ（中身は Claude が作ったファイルとして扱う）")
     ap.add_argument("--threshold", type=float, default=1.0, help="合格とみなす点数（claude plugin eval の --threshold と同じ。既定 1.0）")
     args = ap.parse_args(argv)
 
