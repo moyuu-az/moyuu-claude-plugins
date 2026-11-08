@@ -12,6 +12,10 @@ claude plugin marketplace add moyuu-az/moyuu-claude-plugins
 claude plugin install harness@moyuu
 ```
 
+```bash
+claude plugin install skill-eval@moyuu
+```
+
 ローカルの clone から追加するときは、`claude plugin marketplace add <clone したディレクトリ>` を使う。
 
 ## plugin
@@ -19,6 +23,7 @@ claude plugin install harness@moyuu
 | plugin | 内容 |
 | --- | --- |
 | [harness](plugins/harness) | Claude Code を人の介入なしで最後まで走らせるハーネスを、対象プロジェクトに作る。`/harness:build` で作り、`/harness:build improve` で実行結果から直す |
+| [skill-eval](plugins/skill-eval) | `claude plugin eval` のケースを点検する。`claude plugin eval init` で作ったケースに `/skill-eval:audit` を使い、何もしなくても合格する grader などを見つける |
 
 ## harness の使い方
 
@@ -33,6 +38,10 @@ python3 -m unittest discover -s plugins/harness/tests
 ```
 
 ```bash
+python3 -m unittest discover -s plugins/skill-eval/tests
+```
+
+```bash
 claude plugin validate .
 ```
 
@@ -42,4 +51,10 @@ skill の振る舞いは `claude plugin eval` で測る。ケースは `plugins/
 cd plugins/harness && claude plugin eval . --scaffold --trust-plugin --allow-tools Write Edit -j 2 --max-cost-usd 40
 ```
 
-ケースは Bash を許可していない。`~/.aws/config` に `credential_process` があると、Bash を許可した eval は動かないためである。`cp` と `harness.py check` の実行は、単体テストで確かめる。
+skill-eval のケースは `plugins/skill-eval/evals/` にある（全ケースで $3〜4）。
+
+```bash
+cd plugins/skill-eval && claude plugin eval . --scaffold --trust-plugin -j 2 --max-cost-usd 10
+```
+
+どちらのケースも Bash を許可していない。`~/.aws/config` に `credential_process` があると、Bash を許可した eval は動かないためである。`cp` と `harness.py check` の実行は、単体テストで確かめる。

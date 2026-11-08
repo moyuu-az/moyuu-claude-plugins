@@ -1,0 +1,9 @@
+{
+  "name": "skill-eval",
+  "version": "0.1.0",
+  "description": "claude plugin eval のケースを点検し、何もしなくても合格する grader や、実際の実行でつまずく書き方を見つける skill",
+  "author": { "name": "moyuu" },
+  "repository": "https://github.com/moyuu-az/moyuu-claude-plugins",
+  "license": "MIT",
+  "keywords": ["eval", "skill", "grader", "testing"]
+}

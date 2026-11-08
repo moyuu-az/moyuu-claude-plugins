@@ -7,6 +7,11 @@
       "name": "harness",
       "source": "./plugins/harness",
       "description": "Claude Code を人の介入なしで最後まで走らせるハーネス（評価・停止判定の hook・監査役・実行条件・起動スクリプト）を対象プロジェクトに作る"
+    },
+    {
+      "name": "skill-eval",
+      "source": "./plugins/skill-eval",
+      "description": "claude plugin eval のケースを点検し、何もしなくても合格する grader や、実際の実行でつまずく書き方を見つける"
     }
   ]
 }
