@@ -10,6 +10,7 @@
   "run_seconds": null,
   "safety_margin_minutes": 5,
   "min_samples": 3,
+  "label_ignore": [],
   "stall_minutes": 30,
   "final_check_minutes": 30,
   "stop_runs_check": true

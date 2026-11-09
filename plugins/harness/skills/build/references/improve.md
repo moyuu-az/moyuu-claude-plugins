@@ -22,7 +22,7 @@
 | 見落としやすい観点（比べなかった案、確かめなかった前提） | checklist.md |
 | 必ず守らせたい手順や禁止（評価系の改ざん、危険な操作） | settings.json の deny、check.sh |
 | 知らせる時機（伸び悩みの判定が遅い・早い、最終確認の時間） | harness.json の `stall_minutes`、`final_check_minutes` |
-| 止める時機（早すぎる終了、締め切りの超過） | harness.json の `min_samples`、`safety_margin_minutes`、`run_seconds` |
+| 止める時機（早すぎる終了、締め切りの超過、同じ label の回数が増えずに止まらない） | harness.json の `min_samples`、`safety_margin_minutes`、`run_seconds`、`label_ignore` |
 | 評価そのもの（ばらつきが大きい、抜け道がある） | check.sh |
 
 SYSTEM.md への追記は最後の手段にする。プロンプトの規則は守られないことがあり、増えるほどほかの規則も守られにくくなる。

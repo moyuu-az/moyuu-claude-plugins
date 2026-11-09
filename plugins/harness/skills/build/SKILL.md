@@ -58,6 +58,7 @@ hook の働きは次のとおり。
 | 数値の向き | `direction` | 大きいほど良いなら `max`、レイテンシなどは `min` |
 | 何が最終結果か | `final_counts` | `score` の課題だけで使う。最後の 1 回が採点される課題は `last`（ISUCON など）、最良の結果を残せる課題は `best` |
 | 締め切り | `deadline` か `time_limit_minutes` | 絶対時刻なら deadline、起動からの時間なら time_limit_minutes |
+| check が書き換えるファイル | `label_ignore` | `score` の課題で、check が git で管理しているファイル（DB のダンプ、生成物など）を書き換えるなら、そのパスを並べる。並べないと実行のたびにラベルが変わり、同じ構成の回数が `min_samples` に届かないので、最後まで止まらない |
 | 目標 | `target_score` | 達したら止めてよい値。なければ null |
 | 予算 | `HARNESS_MAX_BUDGET_USD` | run.sh の環境変数 |
 | 触ってよい範囲 | CONDITIONS.md と settings.json の deny | 本番環境、外部への送信、テスト、生成物など |
