@@ -386,7 +386,9 @@ def hook_stop(h: Harness, payload: dict) -> int:
     if rule["should_stop"]:
         return 0
     _emit({"decision": "block", "reason":
-           "まだ終了条件を満たしていません。harness/CONDITIONS.md の目標に向けて作業を続けてください。\n" + status_text(h)})
+           "まだ終了条件を満たしていません。harness/CONDITIONS.md の目標に向けて作業を続けてください。"
+           "直前の作業が進展だったかを harness/SYSTEM.md の「進んでいるかの確かめ」で判断してから、次の手を選んでください。\n"
+           + status_text(h)})
     return 0
 
 

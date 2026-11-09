@@ -1,6 +1,6 @@
 # 調査の根拠
 
-ハーネスの各部品を、どの資料のどの記述に基づいて決めたかをまとめる。2026-11-07 時点で読んだ内容である。
+ハーネスの各部品を、どの資料のどの記述に基づいて決めたかをまとめる。2026-11-07 時点で読んだ内容である。OpenAI Codex の節だけは 2026-11-09 に読んだ。
 
 ## 参照した資料
 
@@ -8,6 +8,7 @@
 - [Effective harnesses for long-running agents（Anthropic, 2025-11）](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
 - [Harness design for long-running application development（Anthropic, 2026-03）](https://www.anthropic.com/engineering/harness-design-long-running-apps)
 - [Best practices for Claude Code](https://code.claude.com/docs/en/best-practices)
+- [openai/codex](https://github.com/openai/codex)（commit `8703d32`）: OpenAI のコーディングエージェント Codex のソースコード。下の節のパスは、このリポジトリの `codex-rs/` からの相対パスである
 - [Hooks reference](https://code.claude.com/docs/en/hooks)、[Configure permissions](https://code.claude.com/docs/en/permissions)、[Skills](https://code.claude.com/docs/en/skills)、[Plugin manifest reference](https://code.claude.com/docs/en/plugins/manifest-reference)
 
 ## ISUCON2026 の記事から取り入れたこと
@@ -32,6 +33,33 @@
 - 作業する者と評価する者を分けると効く。生成した本人に自分の成果を厳しく見させるより、独立した評価役を懐疑的に調整するほうが扱いやすい。評価役は静的な出力ではなく動いているアプリを操作して確かめる。→ auditor を独立させ、読み取り専用にする。
 - 評価の基準には、それぞれ下回ったら不合格になる閾値を置く。→ check.sh は合否を終了コードで返す。
 - 部品は「モデルが単独ではできないこと」についての仮定で、モデルが良くなると古くなる。1 つずつ外して、効いている部品を見極める。→ improve の手順。
+
+## OpenAI Codex から取り入れたこと
+
+Codex には、目標を達成するまで自動でターンを続ける goal の機能がある。続けるたびに渡す指示（`ext/goal/templates/goals/continuation.md`）が、このハーネスの Stop hook と監査役に近い役目を持つ。
+
+| Codex の実装 | ハーネスでの形 |
+| --- | --- |
+| goal を続けるときの指示で、直前のターンを「進展」「確かめた待ち」「進展なし」に分ける。状況の言い直しや実行していない計画は進展ではない。見張りの時間切れや、状態の取得の一時的な失敗は処理の終了ではなく、それだけを理由に処理を起動し直さない（`continuation.md:18-21`） | SYSTEM.md の「進んでいるかの確かめ」。スコアの課題で Stop hook が終了を止めるときは、理由の文でこの節を示す |
+| 同じ障害が 3 ターン続くまで blocked にしない。言い回しが変わっても同じ障害として数える（`continuation.md:21`、`:44-50`） | 同じ障害が 3 回続いたら decisions.md に書き、auditor を起動する |
+| 完了を宣言する前に、目標から要件を書き出し、要件ごとに今の状態の証拠を確かめる。テストの合格は、その要件を見ていると確かめたときだけ証拠になる。「残りの作業が見つからない」は完了の証拠にならない。テストに通りやすい狭い解に置き換えない（`continuation.md:26-42`） | SYSTEM.md の「終える前の確かめ」、auditor の最終監査、checklist.md の項目 |
+| 自動承認の審査役（guardian）への指示に「以前の判断は文脈であって前例ではない」とある（`prompts/templates/guardian/policy.md:3`） | auditor は、decisions.md に残った以前の監査の結論を前例として扱わない |
+| 承認が要る操作を、ほかのツールで回避しないよう指示している（`prompts/templates/permissions/approval_policy/on_request.md:42`）。審査役が 1 ターンで 3 回続けて拒否すると、ターンを止める（`ext/guardian-reviewer/src/circuit_breaker.rs:3-7`） | 拒否された操作を別の書き方で試さず、decisions.md に書く。checklist.md でも確かめる |
+| 書き込みを許したディレクトリの中でも、`.git` などへの書き込みは sandbox が防ぐ（`protocol/src/permissions.rs:43-54`） | settings.json の deny に `Edit(./.git/**)` を足した。deny は組み込みツールと認識できる Bash のファイル操作にしか効かない |
+| codex 系モデルの指示で、自分が入れていない変更を戻さず、`git reset --hard` や `git checkout --` を使わない（`core/gpt-5.2-codex_prompt.md:13-19`） | SYSTEM.md で、戻すのは自分が入れた変更だけにする |
+
+次のものは、ハーネスがすでに同じ形をとっているので変えていない。
+
+- hook の出力が 2,500 トークンを超えると、全文をファイルに書き、先頭と末尾だけをモデルに渡す（`hooks/src/output_spill.rs:13`）。harness.py の Stop hook も、check の出力の末尾 3,000 文字と、全文のログのパスだけをエージェントに渡す。
+- コンテキストの要約のあと、SessionStart の hook を source `compact` で呼び直す（`core/src/session/mod.rs:4931`）。要約に残す内容の指示も、進捗と判断、制約、残りの作業、続けるのに要るデータで、PreCompact hook の指示と重なる（`prompts/templates/compact/prompt.md`）。
+- `codex exec` の結果のファイルは、エージェントが動き出す前に起動側が開く（`exec/src/lib.rs:1086`）。run.sh も、ログのファイルを起動側でリダイレクトしている。
+
+次のものは取り入れていない。
+
+- **AGENTS.md を信頼できる指示として扱うこと。** guardian は AGENTS.md を信頼できる情報源に数える（`prompts/templates/guardian/policy_template.md:6`）。このハーネスは ISUCON2026 で偽の AGENTS.md が置かれた例に合わせ、指示の出どころをシステムプロンプトと CONDITIONS.md に限ったままにする。
+- **予期しない変更を見つけたら止まって人に聞くこと**（`core/gpt-5.2-codex_prompt.md:18`）。無人の実行では答えが返らないので、decisions.md に書いて続ける形に替えた。
+- **費用の上限がないこと。** `codex exec` には、費用やターン数、経過時間の上限を決めるオプションがない。run.sh の `--max-budget-usd` は残す。
+- **Stop の連続ブロックに上限がないこと。** Codex の Stop hook は何回でも終了を止められる（`core/src/session/turn.rs:841`）。Claude Code には上限があるが、ツールを呼ぶたびに数え直されるので、作業を続けている実行は止まらない。
 
 ## Claude Code のドキュメントから取り入れたこと
 
