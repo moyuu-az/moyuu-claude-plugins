@@ -259,6 +259,10 @@ def git_label(project: Path, ignore: list[str]) -> str:
         diff = subprocess.run(["git", "diff", "HEAD", "--binary", "--no-color", "--no-ext-diff", "--no-textconv",
                                "--", ".", ":!harness", *(":(exclude)" + p for p in ignore)],
                               cwd=project, capture_output=True, timeout=10)
+        if diff.returncode != 0:
+            # An empty stdout here would read as "clean" and pool every uncommitted experiment under one label.
+            err = diff.stderr.decode("utf-8", errors="replace").strip()
+            raise SystemExit(f'harness: git diff failed (check harness.json "label_ignore"): {err}')
         dirty = "-dirty-" + hashlib.sha1(diff.stdout).hexdigest()[:8] if diff.stdout.strip() else ""
         return sha.stdout.strip() + dirty
     except (OSError, subprocess.TimeoutExpired):

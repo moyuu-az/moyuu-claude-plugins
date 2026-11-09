@@ -148,8 +148,7 @@ class StopRule(Base):
         self.assertFalse(engine.stop_rule(p.harness())["should_stop"])
 
     def test_needs_min_samples_of_same_label(self):
-        p = self.project(mode="score", time_limit_minutes=600, min_samples=3,
-                                 run_seconds=60)
+        p = self.project(mode="score", time_limit_minutes=600, min_samples=3)
         p.write_scores([{"ts": at(1), "score": 10, "label": "a"},
                         {"ts": at(2), "score": 10, "label": "a"},
                         {"ts": at(3), "score": 10, "label": "b"}])
@@ -410,12 +409,22 @@ class Check(Base):
     def test_label_ignore_does_not_hide_code_changes(self):
         p, _ = self._git_project("echo row >> dump.sql", label_ignore=["dump.sql"])
         labels = []
-        for content in ("A\n", "B\n"):
+        for content in ("A\n", "B\n", "A\n"):
             (p.dir / "app.txt").write_text(content)
             p.run("check")
             labels.append(p.harness().scores()[-1]["label"])
         self.assertIn("dirty", labels[0])
         self.assertNotEqual(labels[0], labels[1])
+        self.assertEqual(labels[0], labels[2])  # the dump grew between them, the code did not
+
+    def test_label_ignore_entry_git_rejects_fails_the_check_instead_of_pooling(self):
+        # git refuses a pathspec outside the repo; its empty stdout must not be read as "no uncommitted changes".
+        p, _ = self._git_project("echo SCORE=10", label_ignore=["/outside-the-repo"])
+        (p.dir / "app.txt").write_text("A\n")
+        r = p.run("check")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("label_ignore", r.stderr)
+        self.assertEqual(p.harness().scores(), [])
 
     def test_label_ignore_must_be_a_list_of_paths(self):
         for bad in ("dump.sql", [1], [""], {"a": 1}):
