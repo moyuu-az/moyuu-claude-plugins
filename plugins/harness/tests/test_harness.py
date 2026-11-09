@@ -389,6 +389,9 @@ class StopHook(Base):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(out["decision"], "block")
         self.assertIn("残り時間", out["reason"])
+        # The reason points at a SYSTEM.md section by name; a renamed heading would leave the pointer dangling.
+        self.assertIn("「進んでいるかの確かめ」", out["reason"])
+        self.assertIn("## 進んでいるかの確かめ", (TEMPLATES / "harness" / "SYSTEM.md").read_text())
 
     def test_allows_when_background_task_will_wake_session(self):
         p = self.project(mode="score", time_limit_minutes=60)
@@ -592,6 +595,8 @@ class TemplateFiles(unittest.TestCase):
         deny = s["permissions"]["deny"]
         for f in ("check.sh", "harness.py", "harness.json", "settings.json", "CONDITIONS.md", "agents.json"):
             self.assertIn(f"Edit(./harness/{f})", deny)
+        # Git history is the run's record; editing .git directly (hooks, refs) would let the agent rewrite it.
+        self.assertIn("Edit(./.git/**)", deny)
         for event, sub in (("Stop", "stop"), ("PostToolUse", "post-tool"),
                            ("SessionStart", "session-start"), ("PreCompact", "pre-compact")):
             self.assertIn(f"hook {sub}", s["hooks"][event][0]["hooks"][0]["command"])
