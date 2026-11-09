@@ -491,6 +491,7 @@ def validate_setup(h: Harness) -> None:
         raise SystemExit(f"harness: harness.json deadline is not an ISO 8601 time: {e}")
     if not h.cfg.get("check_command"):
         raise SystemExit('harness: harness.json has no "check_command"')
+    git_label(h.project, h.cfg.get("label_ignore", []))  # a bad label_ignore must fail here, not in the Stop hook
     path = h.root / "settings.json"
     try:
         settings = json.loads(path.read_text(encoding="utf-8"))

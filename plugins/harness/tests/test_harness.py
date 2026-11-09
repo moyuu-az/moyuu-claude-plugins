@@ -575,6 +575,14 @@ class StartAndReport(Base):
     def test_start_refuses_bad_deadline(self):
         self.assert_start_refused(self.project(deadline="tomorrow noon"), "deadline")
 
+    def test_start_refuses_label_ignore_git_rejects(self):
+        # Mid-run the same git error would crash the Stop hook, which lets the agent stop.
+        p = self.project(label_ignore=["/outside-the-repo"])
+        subprocess.run(["git", "init", "-q"], cwd=p.dir, check=True)
+        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
+                       cwd=p.dir, check=True)
+        self.assert_start_refused(p, "label_ignore")
+
     def test_start_refuses_missing_check_command(self):
         self.assert_start_refused(self.project(check_command=""), "check_command")
 
