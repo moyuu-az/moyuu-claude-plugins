@@ -40,12 +40,12 @@ Codex には、目標を達成するまで自動でターンを続ける goal �
 
 | Codex の実装 | ハーネスでの形 |
 | --- | --- |
-| goal を続けるときの指示で、直前のターンを「進展」「確かめた待ち」「進展なし」に分ける。状況の言い直しや実行していない計画は進展ではない。見張りの時間切れや、状態の取得の一時的な失敗は処理の終了ではなく、それだけを理由に処理を起動し直さない（`continuation.md:18-21`） | SYSTEM.md の「進んでいるかの確かめ」。スコアの課題で Stop hook が終了を止めるときは、理由の文でこの節を示す |
+| goal を続けるときの指示で、直前のターンを「進展」「確かめた待ち」「進展なし」に分ける。状況の言い直しや実行していない計画は進展ではない。見張りの時間切れや、状態の取得の一時的な失敗は処理の終了ではない。見張りの時間切れだけを理由に処理を起動し直さない（`continuation.md:18-21`） | SYSTEM.md の「進んでいるかの確かめ」。ハーネスでは、状態の取得の失敗だけを理由に起動し直すことも禁じた。スコアの課題で Stop hook が終了を止めるときは、理由の文でこの節を示す |
 | 同じ障害が 3 ターン続くまで blocked にしない。言い回しが変わっても同じ障害として数える（`continuation.md:21`、`:44-50`） | 同じ障害が 3 回続いたら decisions.md に書き、auditor を起動する |
 | 完了を宣言する前に、目標から要件を書き出し、要件ごとに今の状態の証拠を確かめる。テストの合格は、その要件を見ていると確かめたときだけ証拠になる。「残りの作業が見つからない」は完了の証拠にならない。テストに通りやすい狭い解に置き換えない（`continuation.md:26-42`） | SYSTEM.md の「終える前の確かめ」、auditor の最終監査、checklist.md の項目 |
 | 自動承認の審査役（guardian）への指示に「以前の判断は文脈であって前例ではない」とある（`prompts/templates/guardian/policy.md:3`） | auditor は、decisions.md に残った以前の監査の結論を前例として扱わない |
 | 承認が要る操作を、ほかのツールで回避しないよう指示している（`prompts/templates/permissions/approval_policy/on_request.md:42`）。審査役が 1 ターンで 3 回続けて拒否すると、ターンを止める（`ext/guardian-reviewer/src/circuit_breaker.rs:3-7`） | 拒否された操作を別の書き方で試さず、decisions.md に書く。checklist.md でも確かめる |
-| 書き込みを許したディレクトリの中でも、`.git` などへの書き込みは sandbox が防ぐ（`protocol/src/permissions.rs:43-54`） | settings.json の deny に `Edit(./.git/**)` を足した。deny は組み込みツールと認識できる Bash のファイル操作にしか効かない |
+| 書き込みを許したディレクトリの中でも、`.git` などへの書き込みは sandbox が防ぐ（`protocol/src/permissions.rs:43-54`） | settings.json の deny に `Edit(./.git/**)` を足した。Claude Code も `.git` を保護されたパスとして扱うが、auto モードでは分類器が書き込みを許すことがあり、bypassPermissions では確かめずに許す。deny はどのモードでも効く。ただし、組み込みツールと、認識できる Bash のファイル操作にしか効かない。git のコマンドによる commit や revert は止めない |
 | codex 系モデルの指示で、自分が入れていない変更を戻さず、`git reset --hard` や `git checkout --` を使わない（`core/gpt-5.2-codex_prompt.md:13-19`） | SYSTEM.md で、戻すのは自分が入れた変更だけにする |
 
 次のものは、ハーネスがすでに同じ形をとっているので変えていない。
@@ -58,7 +58,7 @@ Codex には、目標を達成するまで自動でターンを続ける goal �
 
 - **AGENTS.md を信頼できる指示として扱うこと。** guardian は AGENTS.md を信頼できる情報源に数える（`prompts/templates/guardian/policy_template.md:6`）。このハーネスは ISUCON2026 で偽の AGENTS.md が置かれた例に合わせ、指示の出どころをシステムプロンプトと CONDITIONS.md に限ったままにする。
 - **予期しない変更を見つけたら止まって人に聞くこと**（`core/gpt-5.2-codex_prompt.md:18`）。無人の実行では答えが返らないので、decisions.md に書いて続ける形に替えた。
-- **費用の上限がないこと。** `codex exec` には、費用やターン数、経過時間の上限を決めるオプションがない。run.sh の `--max-budget-usd` は残す。
+- **起動のオプションに費用の上限がないこと。** `codex exec` には、費用やターン数、経過時間の上限を決めるオプションがない。goal には token 数の予算を付けられる（`ext/goal/src/spec.rs:35`）が、費用の上限ではない。run.sh の `--max-budget-usd` は残す。
 - **Stop の連続ブロックに上限がないこと。** Codex の Stop hook は何回でも終了を止められる（`core/src/session/turn.rs:841`）。Claude Code には上限があるが、ツールを呼ぶたびに数え直されるので、作業を続けている実行は止まらない。
 
 ## Claude Code のドキュメントから取り入れたこと
