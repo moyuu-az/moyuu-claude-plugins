@@ -58,6 +58,7 @@ hook の働きは次のとおり。
 | 数値の向き | `direction` | 大きいほど良いなら `max`、レイテンシなどは `min` |
 | 何が最終結果か | `final_counts` | `score` の課題だけで使う。最後の 1 回が採点される課題は `last`（ISUCON など）、最良の結果を残せる課題は `best` |
 | 締め切り | `deadline` か `time_limit_minutes` | 絶対時刻なら deadline、起動からの時間なら time_limit_minutes |
+| check が書き換えるファイル | `label_ignore` | `score` の課題で、check が git で管理しているファイル（DB のダンプ、生成物など）を書き換えるなら、そのパスを並べる。並べないと実行のたびにラベルが変わり、同じ構成の回数が `min_samples` に届かないので、最後まで止まらない。パスはプロジェクトのルートからの相対パスで、ディレクトリも指定できる。エージェントが変更して試すファイルは並べない。並べると、変更しても別の構成として数えられない |
 | 目標 | `target_score` | 達したら止めてよい値。なければ null |
 | 予算 | `HARNESS_MAX_BUDGET_USD` | run.sh の環境変数 |
 | 触ってよい範囲 | CONDITIONS.md と settings.json の deny | 本番環境、外部への送信、テスト、生成物など |
@@ -85,7 +86,7 @@ cp -Rn "${CLAUDE_SKILL_DIR}/templates/harness" ./
 
 ハーネスを渡す前に、次を実際に実行して結果を確かめる。
 
-1. `python3 harness/harness.py check` が想定どおりの合否と SCORE を返す。`score` の課題では同じ状態で 3 回測り、ばらつきの大きさを CONDITIONS.md の「コードからは分からない前提」に書く。シェルが使えないなどの理由で測れないときは、TODO を残さず、「最初の 3 回の check でばらつきを測り、decisions.md に書く」と書く。どのファイルにも `TODO` を残したまま渡さない。
+1. `python3 harness/harness.py check` が想定どおりの合否と SCORE を返す。`score` の課題では同じ状態で 3 回測り、ばらつきの大きさを CONDITIONS.md の「コードからは分からない前提」に書く。3 回の `label` が同じであることも確かめる。違うなら、check が書き換えたファイルを `git status` で調べて `label_ignore` に並べる。シェルが使えないなどの理由で測れないときは、TODO を残さず、「最初の 3 回の check でばらつきを測り、decisions.md に書く」と書く。どのファイルにも `TODO` を残したまま渡さない。
 2. `echo '{}' | python3 harness/harness.py hook stop` が、まだ終了条件を満たしていないときに `"decision": "block"` を返す。
 3. `python3 harness/harness.py status` と `python3 harness/harness.py stop-rule` が設定どおりの値を示す。ここまでの記録は、run.sh が起動時に `harness/state/archive/` へ移す。
 4. 短い試運転をするかをユーザーに聞く。費用がかかるので、するなら `HARNESS_MAX_BUDGET_USD=1 harness/run.sh` のように上限を下げ、`harness/state/runs/` のログで hook が働いたかを確かめる。`claude -p` は検証に通らない設定ファイルを黙って無視するので、ログに `SessionStart` の `hook_response` があることを必ず見る。ログの `system/init` の `permissionMode` が、選んだモード（既定は `auto`）になっているかも見る。auto モードを使えない環境では Manual で始まり、確認が必要な操作がすべて拒否される。

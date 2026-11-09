@@ -351,11 +351,12 @@ class Check(Base):
         self.assertIn("mine", (p.root / row["log"]).read_text())
         self.assertEqual(row["n"], 2)
 
-    def _git_project(self, check_command):
-        p = self.project(check_command=check_command)
+    def _git_project(self, check_command, **cfg):
+        p = self.project(check_command=check_command, **cfg)
         git = lambda *a: subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a],
                                         cwd=p.dir, check=True, capture_output=True, text=True)
         (p.dir / "app.txt").write_text("base\n")
+        (p.dir / "dump.sql").write_text("-- dump\n")
         git("init", "-q")
         git("add", ".")
         git("commit", "-qm", "init")
@@ -379,6 +380,57 @@ class Check(Base):
         self.assertIn("dirty", labels[0])
         self.assertNotEqual(labels[0], labels[1])
         self.assertEqual(labels[0], labels[2])
+
+    def _three_checks(self, p):
+        p.start_at()
+        for _ in range(3):
+            p.run("check")
+        return [r["label"] for r in p.harness().scores()]
+
+    def test_check_that_rewrites_a_tracked_file_splits_labels_without_label_ignore(self):
+        # The bug: each check appends to a tracked dump, so the next label differs and samples never reach min_samples.
+        p, _ = self._git_project("echo row >> dump.sql; echo SCORE=10", time_limit_minutes=600, min_samples=3,
+                                 run_seconds=60)
+        self.assertEqual(len(set(self._three_checks(p))), 3)
+        rule = engine.stop_rule(p.harness())
+        self.assertFalse(rule["should_stop"])
+        self.assertIn("measure variance first", rule["reason"])
+
+    def test_label_ignore_keeps_one_label_when_check_rewrites_a_tracked_file(self):
+        p, _ = self._git_project("echo row >> dump.sql; echo SCORE=10", time_limit_minutes=600, min_samples=3,
+                                 run_seconds=60, label_ignore=["dump.sql"])
+        labels = self._three_checks(p)
+        self.assertEqual(len(set(labels)), 1)
+        self.assertNotIn("dirty", labels[0])
+        rule = engine.stop_rule(p.harness())
+        self.assertEqual(rule["samples"], 3)
+        self.assertTrue(rule["should_stop"], rule)
+
+    def test_label_ignore_does_not_hide_code_changes(self):
+        p, _ = self._git_project("echo row >> dump.sql", label_ignore=["dump.sql"])
+        labels = []
+        for content in ("A\n", "B\n", "A\n"):
+            (p.dir / "app.txt").write_text(content)
+            p.run("check")
+            labels.append(p.harness().scores()[-1]["label"])
+        self.assertIn("dirty", labels[0])
+        self.assertNotEqual(labels[0], labels[1])
+        self.assertEqual(labels[0], labels[2])  # the dump grew between them, the code did not
+
+    def test_label_ignore_entry_git_rejects_fails_the_check_instead_of_pooling(self):
+        # git refuses a pathspec outside the repo; its empty stdout must not be read as "no uncommitted changes".
+        p, _ = self._git_project("echo SCORE=10", label_ignore=["/outside-the-repo"])
+        (p.dir / "app.txt").write_text("A\n")
+        r = p.run("check")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("label_ignore", r.stderr)
+        self.assertEqual(p.harness().scores(), [])
+
+    def test_label_ignore_must_be_a_list_of_paths(self):
+        for bad in ("dump.sql", [1], [""], {"a": 1}):
+            p = self.project(label_ignore=bad)
+            with self.assertRaises(SystemExit, msg=repr(bad)):
+                p.harness()
 
 
 class StopHook(Base):
@@ -522,6 +574,14 @@ class StartAndReport(Base):
 
     def test_start_refuses_bad_deadline(self):
         self.assert_start_refused(self.project(deadline="tomorrow noon"), "deadline")
+
+    def test_start_refuses_label_ignore_git_rejects(self):
+        # Mid-run the same git error would crash the Stop hook, which lets the agent stop.
+        p = self.project(label_ignore=["/outside-the-repo"])
+        subprocess.run(["git", "init", "-q"], cwd=p.dir, check=True)
+        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
+                       cwd=p.dir, check=True)
+        self.assert_start_refused(p, "label_ignore")
 
     def test_start_refuses_missing_check_command(self):
         self.assert_start_refused(self.project(check_command=""), "check_command")

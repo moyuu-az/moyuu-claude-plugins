@@ -74,6 +74,9 @@ class Harness:
             raise SystemExit('harness: harness.json "final_counts" must be "last" or "best" when mode is "score"')
         if self.cfg.get("direction", "max") not in ("max", "min"):
             raise SystemExit('harness: harness.json "direction" must be "max" or "min"')
+        ignore = self.cfg.get("label_ignore", [])
+        if not (isinstance(ignore, list) and all(isinstance(x, str) and x for x in ignore)):
+            raise SystemExit('harness: harness.json "label_ignore" must be a list of paths')
         self.state.mkdir(exist_ok=True)
 
     # ---- small persistence helpers (append-only JSONL so a crash never loses history)
@@ -243,16 +246,23 @@ def stop_rule(h: Harness) -> dict:
 
 # ---------------------------------------------------------------- check
 
-def git_label(project: Path) -> str:
+def git_label(project: Path, ignore: list[str]) -> str:
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=project,
                              capture_output=True, text=True, timeout=10)
         if sha.returncode != 0:
             return "no-git"
         # harness/ is excluded: notes in decisions.md must not split one configuration in two.
+        # label_ignore does the same for tracked files the check itself rewrites (dumps, generated output):
+        # otherwise every run gets a new label and no label ever reaches min_samples.
         # The diff hash keeps different uncommitted experiments on one commit from pooling as one configuration.
         diff = subprocess.run(["git", "diff", "HEAD", "--binary", "--no-color", "--no-ext-diff", "--no-textconv",
-                               "--", ".", ":!harness"], cwd=project, capture_output=True, timeout=10)
+                               "--", ".", ":!harness", *(":(exclude)" + p for p in ignore)],
+                              cwd=project, capture_output=True, timeout=10)
+        if diff.returncode != 0:
+            # An empty stdout here would read as "clean" and pool every uncommitted experiment under one label.
+            err = diff.stderr.decode("utf-8", errors="replace").strip()
+            raise SystemExit(f'harness: git diff failed (check harness.json "label_ignore"): {err}')
         dirty = "-dirty-" + hashlib.sha1(diff.stdout).hexdigest()[:8] if diff.stdout.strip() else ""
         return sha.stdout.strip() + dirty
     except (OSError, subprocess.TimeoutExpired):
@@ -278,7 +288,8 @@ def run_check(h: Harness, label: str | None = None) -> dict:
     if not cmd:
         raise SystemExit('harness: harness.json has no "check_command"')
     timeout = float(h.cfg.get("check_timeout_seconds", 1800))
-    label = label or git_label(h.project)  # before the run: the agent may commit while a long check runs
+    # Before the run: the agent may commit while a long check runs.
+    label = label or git_label(h.project, h.cfg.get("label_ignore", []))
     start = now()
     t0 = dt.datetime.now().timestamp()
     timed_out = False
@@ -480,6 +491,7 @@ def validate_setup(h: Harness) -> None:
         raise SystemExit(f"harness: harness.json deadline is not an ISO 8601 time: {e}")
     if not h.cfg.get("check_command"):
         raise SystemExit('harness: harness.json has no "check_command"')
+    git_label(h.project, h.cfg.get("label_ignore", []))  # a bad label_ignore must fail here, not in the Stop hook
     path = h.root / "settings.json"
     try:
         settings = json.loads(path.read_text(encoding="utf-8"))
